@@ -1,0 +1,1001 @@
+openapi: 3.1.0
+info:
+  title: FinSmart API
+  version: 0.1.0
+  description: |
+    API MVP FinSmart.
+
+    Общие правила:
+    - Все защищённые запросы передают заголовок `Authorization: Bearer <accessToken>`.
+    - Денежные суммы передаются строкой с двумя знаками после точки: `"-1250.00"`, `"84.99"`.
+      Отрицательная сумма операции — расход, положительная — поступление.
+    - Даты — `YYYY-MM-DD`, время — ISO 8601 в UTC (`2026-10-29T16:00:00Z`), месяц — `YYYY-MM`.
+    - «Сегодня» и «текущий месяц» сервер определяет по часовому поясу Asia/Yekaterinburg.
+    - Валюта в MVP — только `RUB`.
+    - Любая ошибка возвращается в формате `Error`.
+    - Чужие данные недоступны: запрос к чужому объекту возвращает 404.
+
+servers:
+  - url: http://localhost:8080
+    description: Локальный запуск через docker compose
+  - url: http://10.0.2.2:8080
+    description: Тот же сервер из Android-эмулятора
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: categories
+  - name: transactions
+  - name: analytics
+  - name: goals
+  - name: offers
+  - name: ai
+  - name: system
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Состояние сервера и БД
+      security: []
+      responses:
+        "200":
+          description: Сервер и БД доступны
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                database: ok
+        "503":
+          description: БД недоступна
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: degraded
+                database: unavailable
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+            example:
+              email: demo@finsmart.local
+              password: demo12345
+      responses:
+        "201":
+          description: Пользователь создан, сразу выдаются токены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokens"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Email уже занят
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: email_taken
+                message: Пользователь с таким email уже существует
+                details: null
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokens"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: Неверный email или пароль
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: invalid_credentials
+                message: Неверный email или пароль
+                details: null
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Новый access-токен по refresh-токену
+      description: Refresh-токен при этом не меняется и действует до своего срока.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Новый access-токен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokens"
+        "401":
+          description: Refresh-токен недействителен, истёк или отозван — нужен повторный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: invalid_refresh_token
+                message: Сессия истекла, войдите заново
+                details: null
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход — отзыв refresh-токена
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "204":
+          description: Токен отозван (или уже был недействителен)
+
+  /categories:
+    get:
+      tags: [categories]
+      summary: Справочник категорий
+      security: []
+      responses:
+        "200":
+          description: Все категории
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+              example:
+                - {code: groceries, name: Продукты}
+                - {code: cafes, name: Кафе и рестораны}
+                - {code: transport, name: Транспорт}
+                - {code: health, name: Здоровье}
+                - {code: home, name: Дом}
+                - {code: entertainment, name: Развлечения}
+                - {code: other, name: Прочее}
+
+  /transactions/import:
+    post:
+      tags: [transactions]
+      summary: Импорт CSV-выписки
+      description: |
+        Файл UTF-8 с заголовком `operation_id,date,amount,currency,description,mcc`.
+
+        - `operation_id` — UUID, уникален в рамках пользователя;
+        - `date` — `YYYY-MM-DD`;
+        - `amount` — десятичное число через точку, не более 2 знаков после точки, не 0;
+        - `currency` — `RUB`;
+        - `description` — необязательно;
+        - `mcc` — 4 цифры или пусто; неизвестный или пустой MCC → категория `other`.
+
+        Строка с уже загруженным `operation_id` считается дубликатом и не меняет существующую операцию.
+        Ошибочные строки не мешают сохранению корректных.
+        Номер строки `line` — номер строки в файле: заголовок — строка 1, первая операция — строка 2.
+
+        Ограничения: файл до 1 МБ и до 5000 строк данных.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Импорт выполнен, в том числе частично
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+              example:
+                imported: 42
+                duplicates: 3
+                failed: 2
+                errors:
+                  - line: 7
+                    field: date
+                    reason: Дата должна быть в формате YYYY-MM-DD
+                  - line: 15
+                    field: amount
+                    reason: Сумма должна быть числом с не более чем 2 знаками после точки
+        "400":
+          description: Файл не является CSV нужного формата (нет файла, пустой файл, неверный заголовок)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: invalid_csv
+                message: Неверный заголовок CSV
+                details:
+                  expected: operation_id,date,amount,currency,description,mcc
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: Файл больше 1 МБ или больше 5000 строк
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: file_too_large
+                message: Файл слишком большой
+                details: null
+
+  /transactions:
+    get:
+      tags: [transactions]
+      summary: Список операций пользователя
+      description: Сортировка — по дате операции, новые сверху.
+      parameters:
+        - name: month
+          in: query
+          required: false
+          description: Только операции за месяц
+          schema:
+            type: string
+            pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+            example: "2026-10"
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CategoryCode"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Страница операций
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /transactions/{id}/category:
+    patch:
+      tags: [transactions]
+      summary: Ручная смена категории операции
+      description: После ручной смены повторный импорт не перезаписывает категорию этой операции.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category]
+              properties:
+                category:
+                  $ref: "#/components/schemas/CategoryCode"
+            example:
+              category: cafes
+      responses:
+        "200":
+          description: Обновлённая операция
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /analytics/summary:
+    get:
+      tags: [analytics]
+      summary: Сводка расходов за календарный месяц
+      description: |
+        Учитываются только расходы (`amount < 0`), суммы — по модулю.
+        Сравнение — с предыдущим календарным месяцем.
+        `changePercent` равен `null`, если в предыдущем месяце расходов не было.
+        Категории отсортированы по сумме за текущий месяц по убыванию; в списке есть категории,
+        у которых были расходы хотя бы в одном из двух месяцев.
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+            example: "2026-10"
+      responses:
+        "200":
+          description: Сводка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsSummary"
+              example:
+                month: "2026-10"
+                previousMonth: "2026-09"
+                totalExpense: "45230.50"
+                previousTotalExpense: "38900.00"
+                changePercent: 16.3
+                topCategory: groceries
+                transactionsCount: 87
+                categories:
+                  - category: groceries
+                    amount: "18400.00"
+                    previousAmount: "15100.00"
+                    changePercent: 21.9
+                    sharePercent: 40.7
+                  - category: transport
+                    amount: "6200.00"
+                    previousAmount: "0.00"
+                    changePercent: null
+                    sharePercent: 13.7
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /goals:
+    get:
+      tags: [goals]
+      summary: Цели пользователя
+      responses:
+        "200":
+          description: Список целей, новые сверху
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Goal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [goals]
+      summary: Создать цель
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoalCreate"
+            example:
+              title: Тратить меньше на кафе
+              targetAmount: "5000.00"
+              currentAmount: "0.00"
+              deadline: "2026-11-30"
+              category: cafes
+      responses:
+        "201":
+          description: Созданная цель
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /goals/{id}:
+    patch:
+      tags: [goals]
+      summary: Изменить цель
+      description: Передаются только меняемые поля. `deadline` и `category` можно сбросить, передав `null`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoalUpdate"
+            example:
+              currentAmount: "1500.00"
+      responses:
+        "200":
+          description: Обновлённая цель
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /offers:
+    get:
+      tags: [offers]
+      summary: Действующие скидки
+      description: |
+        Предложения с `validTo` раньше сегодняшней даты не возвращаются.
+        Пустой `items` означает, что подходящих скидок нет (это не ошибка).
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CategoryCode"
+        - name: region
+          in: query
+          required: false
+          schema:
+            type: string
+            example: Екатеринбург
+      responses:
+        "200":
+          description: Список скидок
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfferList"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /offers/{id}:
+    get:
+      tags: [offers]
+      summary: Карточка скидки
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Скидка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Offer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /ai/recommendation:
+    get:
+      tags: [ai]
+      summary: Одна рекомендация на главной
+      description: |
+        Формат согласуется с владельцем ИИ-модуля (T3).
+        При недоступной LLM возвращается рекомендация по правилам (`source: rules`); эндпоинт не падает из-за LLM.
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+            example: "2026-10"
+      responses:
+        "200":
+          description: Рекомендация
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recommendation"
+              example:
+                title: Расходы на продукты выросли
+                message: В этом месяце на продукты ушло больше, чем в прошлом. Посмотрите скидки в этой категории.
+                category: groceries
+                actionType: open_offers
+                actionLabel: Смотреть скидки
+                source: rules
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Нет access-токена, он недействителен или истёк. Клиент вызывает /auth/refresh и повторяет запрос.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: unauthorized
+            message: Требуется авторизация
+            details: null
+    NotFound:
+      description: Объект не найден или принадлежит другому пользователю
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: not_found
+            message: Объект не найден
+            details: null
+    ValidationError:
+      description: Некорректные параметры или тело запроса
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: validation_error
+            message: Некорректные данные
+            details:
+              email: Некорректный email
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки
+        message:
+          type: string
+          description: Текст для пользователя
+        details:
+          type: [object, 'null']
+          additionalProperties:
+            type: string
+
+    Health:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        database:
+          type: string
+          enum: [ok, unavailable]
+
+    Money:
+      type: string
+      pattern: "^-?\\d+\\.\\d{2}$"
+      example: "-1250.00"
+
+      description: 'Сумма в ответах сервера: всегда два знака после точки'
+    MoneyInput:
+      type: string
+      pattern: ^-?\d+(\.\d{1,2})?$
+      description: 'Сумма во входящих запросах: целая или с 1–2 знаками после точки'
+      example: '5000'
+    CategoryCode:
+      type: string
+      enum: [groceries, cafes, transport, health, home, entertainment, other]
+
+    Category:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          $ref: "#/components/schemas/CategoryCode"
+        name:
+          type: string
+
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          description: Срок жизни access-токена в секундах
+          example: 3600
+        user:
+          $ref: "#/components/schemas/User"
+      example:
+        accessToken: eyJhbGciOiJIUzI1NiJ9...
+        refreshToken: 3q2+7wAAAA...
+        tokenType: Bearer
+        expiresIn: 3600
+        user:
+          id: 6b1f3c52-2d7e-4c6b-9a43-1f0e2b7d9c11
+          email: demo@finsmart.local
+
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+
+    ImportResult:
+      type: object
+      required: [imported, duplicates, failed, errors]
+      properties:
+        imported:
+          type: integer
+          description: Новых операций сохранено
+        duplicates:
+          type: integer
+          description: Строк пропущено как уже загруженные
+        failed:
+          type: integer
+          description: Строк с ошибками
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportRowError"
+
+    ImportRowError:
+      type: object
+      required: [line, field, reason]
+      properties:
+        line:
+          type: integer
+        field:
+          type: [string, 'null']
+          description: Столбец с ошибкой, null — ошибка всей строки
+        reason:
+          type: string
+
+    Transaction:
+      type: object
+      required: [id, operationId, date, amount, currency, description, mcc, category, categoryManual]
+      properties:
+        id:
+          type: string
+          format: uuid
+        operationId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        amount:
+          $ref: "#/components/schemas/Money"
+        currency:
+          type: string
+          example: RUB
+        description:
+          type: [string, 'null']
+        mcc:
+          type: [string, 'null']
+          example: "5411"
+        category:
+          $ref: "#/components/schemas/CategoryCode"
+        categoryManual:
+          type: boolean
+          description: Категория выбрана пользователем вручную
+      example:
+        id: 0c9a8e7d-1b2c-4d3e-8f9a-0b1c2d3e4f5a
+        operationId: 3f2b8c1e-9a4d-4f6b-8e2a-1c5d7e9f0a3b
+        date: "2026-10-21"
+        amount: "-849.90"
+        currency: RUB
+        description: MAGNIT MM EKATERINBURG
+        mcc: "5411"
+        category: groceries
+        categoryManual: false
+
+    TransactionPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+          description: Всего операций по фильтру
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AnalyticsSummary:
+      type: object
+      required: [month, previousMonth, totalExpense, previousTotalExpense, changePercent, topCategory, transactionsCount, categories]
+      properties:
+        month:
+          type: string
+        previousMonth:
+          type: string
+        totalExpense:
+          $ref: "#/components/schemas/Money"
+        previousTotalExpense:
+          $ref: "#/components/schemas/Money"
+        changePercent:
+          type: [number, 'null']
+          description: Изменение к прошлому месяцу в процентах, 1 знак после точки
+        topCategory:
+          anyOf:
+            - $ref: "#/components/schemas/CategoryCode"
+            - type: 'null'
+          description: Категория с наибольшим расходом, null — расходов нет
+        transactionsCount:
+          type: integer
+          description: Число расходных операций за месяц
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategorySummary"
+
+    CategorySummary:
+      type: object
+      required: [category, amount, previousAmount, changePercent, sharePercent]
+      properties:
+        category:
+          $ref: "#/components/schemas/CategoryCode"
+        amount:
+          $ref: "#/components/schemas/Money"
+        previousAmount:
+          $ref: "#/components/schemas/Money"
+        changePercent:
+          type: [number, 'null']
+        sharePercent:
+          type: number
+          description: Доля от общего расхода за месяц, 1 знак после точки
+
+    Goal:
+      type: object
+      required: [id, title, targetAmount, currentAmount, progressPercent, deadline, category, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        targetAmount:
+          $ref: "#/components/schemas/Money"
+        currentAmount:
+          $ref: "#/components/schemas/Money"
+        progressPercent:
+          type: number
+          description: currentAmount / targetAmount * 100, не больше 100, 1 знак после точки
+        deadline:
+          type: [string, 'null']
+          format: date
+        category:
+          anyOf:
+            - $ref: "#/components/schemas/CategoryCode"
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GoalCreate:
+      type: object
+      required: [title, targetAmount]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        targetAmount:
+          $ref: "#/components/schemas/MoneyInput"
+        currentAmount:
+          $ref: "#/components/schemas/MoneyInput"
+        deadline:
+          type: [string, 'null']
+          format: date
+        category:
+          anyOf:
+            - $ref: "#/components/schemas/CategoryCode"
+            - type: 'null'
+      description: targetAmount > 0, currentAmount >= 0 (по умолчанию 0)
+    GoalUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        targetAmount:
+          $ref: "#/components/schemas/MoneyInput"
+        currentAmount:
+          $ref: "#/components/schemas/MoneyInput"
+        deadline:
+          type: [string, 'null']
+          format: date
+        category:
+          anyOf:
+            - $ref: "#/components/schemas/CategoryCode"
+            - type: 'null'
+      description: targetAmount > 0, currentAmount >= 0
+    Offer:
+      type: object
+      required: [id, sourceId, title, category, regularPrice, salePrice, currency, validFrom, validTo, conditions, url, region, checkedAt, potentialSaving]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceId:
+          type: string
+        title:
+          type: string
+        category:
+          $ref: "#/components/schemas/CategoryCode"
+        regularPrice:
+          anyOf:
+            - $ref: "#/components/schemas/Money"
+            - type: 'null'
+        salePrice:
+          anyOf:
+            - $ref: "#/components/schemas/Money"
+            - type: 'null'
+        currency:
+          type: string
+          example: RUB
+        validFrom:
+          type: [string, 'null']
+          format: date
+        validTo:
+          type: [string, 'null']
+          format: date
+        conditions:
+          type: [string, 'null']
+        url:
+          type: string
+          format: uri
+        region:
+          type: [string, 'null']
+        checkedAt:
+          type: string
+          format: date-time
+        potentialSaving:
+          anyOf:
+            - $ref: "#/components/schemas/Money"
+            - type: 'null'
+          description: regularPrice - salePrice; только если известны обе цены и salePrice < regularPrice
+      example:
+        id: 9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a
+        sourceId: demo-magnit-001
+        title: "[ДЕМО] Молоко 2,5%, 930 мл"
+        category: groceries
+        regularPrice: "109.99"
+        salePrice: "84.99"
+        currency: RUB
+        validFrom: "2026-10-29"
+        validTo: "2026-11-05"
+        conditions: "Тестовое условие: нужна карта магазина"
+        url: https://magnit.ru/
+        region: Екатеринбург
+        checkedAt: "2026-10-29T16:00:00Z"
+        potentialSaving: "25.00"
+
+    OfferList:
+      type: object
+      required: [items, catalogCheckedAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Offer"
+        catalogCheckedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Время последней успешной загрузки каталога, null — каталог ещё не загружался
+
+    Recommendation:
+      type: object
+      required: [title, message, category, actionType, actionLabel, source]
+      properties:
+        title:
+          type: string
+          maxLength: 80
+        message:
+          type: string
+          maxLength: 400
+        category:
+          anyOf:
+            - $ref: "#/components/schemas/CategoryCode"
+            - type: 'null'
+        actionType:
+          type: string
+          enum: [open_offers, open_goals, open_transactions, none]
+        actionLabel:
+          type: [string, 'null']
+          maxLength: 40
+        source:
+          type: string
+          enum: [llm, rules]
