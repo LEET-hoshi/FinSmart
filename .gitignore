@@ -1,0 +1,17 @@
+# Секреты и локальные настройки
+.env
+local.properties
+
+# Gradle / сборка
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# ОС
+.DS_Store
+Thumbs.db
