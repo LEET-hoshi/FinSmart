@@ -4,6 +4,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
+import ru.finsmart.server.common.AppConfig
 import java.lang.reflect.Proxy
 import java.sql.SQLException
 import javax.sql.DataSource
@@ -11,6 +12,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class ApplicationTest {
+    private val testConfig = AppConfig.fromEnv(mapOf("JWT_SECRET" to "test-secret-test-secret-test-secret!!"))
+
     private val unavailableDataSource: DataSource = Proxy.newProxyInstance(
         DataSource::class.java.classLoader,
         arrayOf(DataSource::class.java),
@@ -18,7 +21,7 @@ class ApplicationTest {
 
     @Test
     fun health_returns_503_when_database_is_unavailable() = testApplication {
-        application { module(unavailableDataSource) }
+        application { module(testConfig, unavailableDataSource) }
 
         val response = client.get("/health")
 
@@ -28,7 +31,7 @@ class ApplicationTest {
 
     @Test
     fun unknown_route_returns_not_found_error_with_explicit_null_details() = testApplication {
-        application { module(unavailableDataSource) }
+        application { module(testConfig, unavailableDataSource) }
 
         val response = client.get("/no-such-route")
 
