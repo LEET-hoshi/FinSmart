@@ -6,6 +6,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -32,10 +33,24 @@ fun Application.module(dataSource: DataSource) {
     install(ContentNegotiation) {
         json(Json {
             ignoreUnknownKeys = true
+            // контракт требует "details": null в ошибках, а не отсутствие поля
+            encodeDefaults = true
         })
     }
     install(CallLogging)
     install(StatusPages) {
+        exception<BadRequestException> { call, _ ->
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ApiError(code = "validation_error", message = "Некорректные данные"),
+            )
+        }
+        status(HttpStatusCode.NotFound) { call, _ ->
+            call.respond(
+                HttpStatusCode.NotFound,
+                ApiError(code = "not_found", message = "Объект не найден"),
+            )
+        }
         exception<Throwable> { call, cause ->
             call.application.environment.log.error("Unhandled error", cause)
             call.respond(
