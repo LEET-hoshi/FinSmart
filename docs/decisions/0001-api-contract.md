@@ -34,6 +34,7 @@
 
 - Каталог загружается сервером из `fixtures/offers/offers.json` (формат — `docs/data/offers-contract.md`) с upsert по `sourceId`; клиентского эндпоинта загрузки нет.
 - `potentialSaving` считается только при известных обеих ценах и `salePrice < regularPrice`.
+- Предложение действует включительно по `validTo`; без `validTo` — бессрочное. Фильтр `region` включает предложения без региона. Просроченное предложение недоступно и по `GET /offers/{id}` (404).
 
 ## Отложено
 

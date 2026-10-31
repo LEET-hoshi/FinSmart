@@ -469,7 +469,9 @@ paths:
       tags: [offers]
       summary: Действующие скидки
       description: |
-        Предложения с `validTo` раньше сегодняшней даты не возвращаются.
+        Предложения с `validTo` раньше сегодняшней даты не возвращаются; в день `validTo` предложение ещё действует.
+        Предложения без `validTo` считаются бессрочными.
+        Фильтр `region` возвращает предложения этого региона и предложения без региона (`region: null`, действуют везде).
         Пустой `items` означает, что подходящих скидок нет (это не ошибка).
       parameters:
         - name: category
@@ -499,6 +501,7 @@ paths:
     get:
       tags: [offers]
       summary: Карточка скидки
+      description: Просроченное предложение возвращает 404, как и в списке.
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -627,8 +630,8 @@ components:
       type: string
       pattern: "^-?\\d+\\.\\d{2}$"
       example: "-1250.00"
-
       description: 'Сумма в ответах сервера: всегда два знака после точки'
+
     MoneyInput:
       type: string
       pattern: ^-?\d+(\.\d{1,2})?$
