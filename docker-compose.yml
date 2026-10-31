@@ -22,8 +22,12 @@ services:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-finsmart}
       DB_USER: ${POSTGRES_USER:-finsmart}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-finsmart}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
+      OFFERS_FILE: /app/fixtures/offers/offers.json
     ports:
       - "${API_PORT:-8080}:8080"
+    volumes:
+      - ${FIXTURES_DIR:-./fixtures}:/app/fixtures:ro
     depends_on:
       db:
         condition: service_healthy

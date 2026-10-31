@@ -48,4 +48,6 @@ docker compose up --build
 
 Проверка: `http://localhost:8080/health` → `{"status":"ok","database":"ok"}`.
 
-Порты и пароль БД можно поменять в `.env` (шаблон — `.env.example`). Полный сброс БД: `docker compose down -v`.
+Порты, пароль БД и `JWT_SECRET` (не короче 32 символов) задаются в `.env` (шаблон — `.env.example`); без `.env` используются значения для локальной разработки. Полный сброс БД: `docker compose down -v`.
+
+Если порт 8080 занят (например, локальным веб-сервером), задайте `API_PORT` в `.env`. Сквозная проверка демо-сценария: `bash scripts/smoke.sh`; состояние backend и план — `docs/operations/backend-handoff.md`.
