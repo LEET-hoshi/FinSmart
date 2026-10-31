@@ -1,6 +1,6 @@
 operation_id,date,amount,currency,description,mcc
 20692644-7f6b-5238-83dc-acab07f68256,2026-10-11,-300.00,RUB,MAGNIT,5411
-not-a-uuid,2026-10-11,-100.00,RUB,BAD ID,5411
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,2026-10-11,-100.00,RUB,BAD ID,5411
 acc230b0-d27b-573c-b466-e0a965f82497,11.10.2026,-100.00,RUB,BAD DATE FORMAT,5411
 f4d5ab70-2696-5f48-8ab4-121a0caf1406,2026-02-30,-100.00,RUB,NONEXISTENT DATE,5411
 8ed94834-562d-530b-b745-cfb8eb0d3fe8,2026-10-11,"-100,50",RUB,COMMA DECIMAL,5411

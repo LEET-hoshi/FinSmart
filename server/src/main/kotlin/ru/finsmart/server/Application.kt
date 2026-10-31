@@ -32,16 +32,21 @@ import ru.finsmart.server.common.ApiError
 import ru.finsmart.server.common.ApiException
 import ru.finsmart.server.common.AppConfig
 import ru.finsmart.server.common.Database
+import ru.finsmart.server.goals.goalRoutes
 import ru.finsmart.server.health.healthRoutes
+import ru.finsmart.server.offers.OfferCatalogLoader
+import ru.finsmart.server.offers.offerRoutes
 import ru.finsmart.server.transactions.TransactionRepository
 import ru.finsmart.server.transactions.TransactionService
 import ru.finsmart.server.transactions.transactionRoutes
+import java.nio.file.Path
 import javax.sql.DataSource
 
 fun main() {
     val config = AppConfig.fromEnv()
     val dataSource = Database.createDataSource(config.db)
     Database.migrate(dataSource)
+    config.offersFile?.let { OfferCatalogLoader.load(dataSource, Path.of(it)) }
 
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {
         module(config, dataSource)
@@ -52,7 +57,8 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
     val tokens = TokenService(config.jwt)
     val authService = AuthService(AuthRepository(dataSource), tokens)
     val transactionService = TransactionService(TransactionRepository(dataSource))
-    val analyticsService = AnalyticsService(AnalyticsRepository(dataSource))
+    val analyticsRepository = AnalyticsRepository(dataSource)
+    val analyticsService = AnalyticsService(analyticsRepository)
     val categoryRepository = CategoryRepository(dataSource)
 
     install(ContentNegotiation) {
@@ -113,6 +119,8 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
         authenticate(JWT_AUTH) {
             transactionRoutes(transactionService)
             analyticsRoutes(analyticsService)
+            goalRoutes(dataSource, analyticsRepository)
+            offerRoutes(dataSource)
         }
     }
 }

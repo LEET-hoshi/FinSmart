@@ -6,6 +6,7 @@ data class AppConfig(
     val port: Int,
     val db: DbConfig,
     val jwt: JwtConfig,
+    val offersFile: String? = null,
 ) {
     companion object {
         private const val MIN_SECRET_LENGTH = 32
@@ -25,6 +26,7 @@ data class AppConfig(
                 accessTtl = Duration.ofSeconds(env["ACCESS_TOKEN_TTL_SECONDS"]?.toLongOrNull() ?: 3600),
                 refreshTtl = Duration.ofDays(env["REFRESH_TOKEN_TTL_DAYS"]?.toLongOrNull() ?: 30),
             ),
+            offersFile = env["OFFERS_FILE"]?.takeIf { it.isNotBlank() },
         )
     }
 }

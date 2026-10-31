@@ -1,6 +1,5 @@
 package ru.finsmart.server.transactions
 
-import ru.finsmart.server.common.Categories
 import ru.finsmart.server.common.toMoneyString
 import ru.finsmart.server.common.transaction
 import java.sql.Connection
@@ -19,9 +18,10 @@ data class TransactionFilter(
 
 class TransactionRepository(private val dataSource: DataSource) {
 
-    suspend fun insertNew(userId: UUID, rows: List<CsvRow>): Int = dataSource.transaction { conn ->
+    suspend fun mccCategories(): Map<String, String> = dataSource.transaction { conn -> loadMccMap(conn) }
+
+    suspend fun insertNew(userId: UUID, rows: List<ParsedTransaction>): Int = dataSource.transaction { conn ->
         if (rows.isEmpty()) return@transaction 0
-        val mccMap = loadMccMap(conn)
         conn.prepareStatement(
             """
             INSERT INTO transactions (user_id, external_id, operation_date, amount, currency, description, mcc, category_code)
@@ -37,7 +37,7 @@ class TransactionRepository(private val dataSource: DataSource) {
                 ps.setString(5, row.currency)
                 ps.setString(6, row.description)
                 ps.setString(7, row.mcc)
-                ps.setString(8, row.mcc?.let { mccMap[it] } ?: Categories.FALLBACK)
+                ps.setString(8, row.categoryCode)
                 ps.addBatch()
             }
             ps.executeBatch().count { it > 0 }
@@ -45,7 +45,7 @@ class TransactionRepository(private val dataSource: DataSource) {
     }
 
     suspend fun find(userId: UUID, filter: TransactionFilter): TransactionPageResponse = dataSource.transaction { conn ->
-        val conditions = StringBuilder("user_id = ?")
+        val conditions = StringBuilder("user_id = ? AND deleted_at IS NULL")
         val params = mutableListOf<Any>(userId)
         if (filter.month != null) {
             conditions.append(" AND operation_date >= ? AND operation_date < ?")
@@ -85,7 +85,7 @@ class TransactionRepository(private val dataSource: DataSource) {
                 """
                 UPDATE transactions
                 SET category_code = ?, category_manual = TRUE, updated_at = now()
-                WHERE id = ? AND user_id = ?
+                WHERE id = ? AND user_id = ? AND deleted_at IS NULL
                 RETURNING $COLUMNS
                 """.trimIndent(),
             ).use { ps ->

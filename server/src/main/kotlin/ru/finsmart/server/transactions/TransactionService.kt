@@ -10,27 +10,21 @@ import java.util.UUID
 class TransactionService(private val repository: TransactionRepository) {
 
     suspend fun import(userId: UUID, bytes: ByteArray): ImportResultResponse {
-        val parsed = when (val result = withContext(Dispatchers.Default) { CsvParser.parse(bytes, MAX_ROWS) }) {
-            is CsvParseResult.Parsed -> result
-            is CsvParseResult.Invalid -> throw ApiException(
-                HttpStatusCode.BadRequest,
-                "invalid_csv",
-                result.message,
-                result.details,
-            )
-            CsvParseResult.TooManyRows -> throw fileTooLarge()
+        val parsed = try {
+            val mccCategories = repository.mccCategories()
+            withContext(Dispatchers.Default) { CsvImportParser.parse(bytes, mccCategories) }
+        } catch (e: InvalidCsvException) {
+            throw ApiException(HttpStatusCode.BadRequest, "invalid_csv", e.message ?: "Неверный CSV", e.details)
+        } catch (e: CsvTooLargeException) {
+            throw fileTooLarge()
         }
 
-        val seen = HashSet<String>()
-        val unique = parsed.rows.filter { seen.add(it.operationId) }
-        val inFileDuplicates = parsed.rows.size - unique.size
-
-        val imported = repository.insertNew(userId, unique)
-        val alreadyStored = unique.size - imported
+        val imported = repository.insertNew(userId, parsed.rows)
+        val alreadyStored = parsed.rows.size - imported
 
         return ImportResultResponse(
             imported = imported,
-            duplicates = inFileDuplicates + alreadyStored,
+            duplicates = parsed.duplicatesInFile + alreadyStored,
             failed = parsed.errors.size,
             errors = parsed.errors.map { ImportRowErrorResponse(it.line, it.field, it.reason) },
         )

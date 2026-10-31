@@ -56,7 +56,7 @@ class AnalyticsRepository(private val dataSource: DataSource) {
                        COALESCE(SUM(-amount) FILTER (WHERE operation_date < ?), 0) AS previous_amount,
                        COUNT(*) FILTER (WHERE operation_date >= ?) AS current_count
                 FROM transactions
-                WHERE user_id = ? AND amount < 0 AND operation_date >= ? AND operation_date < ?
+                WHERE user_id = ? AND deleted_at IS NULL AND amount < 0 AND operation_date >= ? AND operation_date < ?
                 GROUP BY category_code
                 """.trimIndent(),
             ).use { ps ->
