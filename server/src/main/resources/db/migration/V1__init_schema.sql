@@ -19,7 +19,7 @@ CREATE TABLE mcc_mappings (
 CREATE TABLE transactions (
     id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID          NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    external_id     UUID          NOT NULL,
+    external_id     VARCHAR(64)   NOT NULL,
     operation_date  DATE          NOT NULL,
     amount          NUMERIC(14,2) NOT NULL CHECK (amount <> 0),
     currency        CHAR(3)       NOT NULL DEFAULT 'RUB',
