@@ -1,0 +1,3 @@
+operation_id,date,amount,currency,description,mcc
+mcc-001,2026-10-01,-500.00,RUB,MCC нет в справочнике,9999
+mcc-002,2026-10-02,-250.00,RUB,MCC не указан,
