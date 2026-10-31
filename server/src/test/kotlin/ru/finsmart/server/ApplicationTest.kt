@@ -4,6 +4,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
+import ru.finsmart.server.auth.JwtSettings
 import java.lang.reflect.Proxy
 import java.sql.SQLException
 import javax.sql.DataSource
@@ -18,7 +19,7 @@ class ApplicationTest {
 
     @Test
     fun health_returns_503_when_database_is_unavailable() = testApplication {
-        application { module(unavailableDataSource) }
+        application { module(unavailableDataSource, JwtSettings("test-secret-test-secret-test-secret!!")) }
 
         val response = client.get("/health")
 
@@ -28,7 +29,7 @@ class ApplicationTest {
 
     @Test
     fun unknown_route_returns_not_found_error_with_explicit_null_details() = testApplication {
-        application { module(unavailableDataSource) }
+        application { module(unavailableDataSource, JwtSettings("test-secret-test-secret-test-secret!!")) }
 
         val response = client.get("/no-such-route")
 

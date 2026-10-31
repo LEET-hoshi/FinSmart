@@ -2,35 +2,50 @@
 
 Состояние на 31.10.2026. Ветка `feature/schema-and-csv-import` поверх `feature/server-skeleton` (PR #1).
 
-## Что уже есть
+## Что уже работает
 
-- Ktor + PostgreSQL 16 + Flyway, запуск `docker compose up --build`, `/health`.
-- Миграции V1 (схема), V2 (`refresh_tokens`), V3 (тип цели, `deleted_at`, `sync_changes`), повторяемый seed категорий и MCC.
-- Единый формат ошибки `{code, message, details}`: `details` всегда присутствует (`null`), 400 для кривого запроса, 404 в том же формате, 500 для остального.
-- `transactions/CsvImportParser` — разбор и валидация CSV по контракту, без БД; 11 unit-тестов (валидные строки, неизвестный MCC, дубликаты внутри файла, ошибки с номерами строк, кавычки, BOM, лимиты 1 МБ и 5000 строк).
-- Тесты: `cd server && ./gradlew test` (нужен JDK 21). Проверено локально и на реальной PostgreSQL в Docker.
+Запуск: `docker compose up --build` (см. README). Сквозная проверка демо-сценария: `API=http://localhost:18080 CSV_DIR=<путь к fixtures/csv> bash scripts/smoke.sh` — 28 проверок, на момент передачи все зелёные. Юнит-тесты: `cd server && ./gradlew test` (нужен JDK 21) — 21 тест.
 
-## Что нужно сделать (по приоритету демо)
+| Область | Эндпоинты | Заметки |
+|---|---|---|
+| Служебное | `GET /health`, `GET /categories` | `/categories` без авторизации |
+| Auth | `POST /auth/register`, `/login`, `/refresh`, `/logout` | BCrypt (cost 12), JWT access 1 ч, refresh 30 дней без ротации, в БД только SHA-256 хеш refresh-токена |
+| Импорт | `POST /transactions/import` | парсер `transactions/CsvImportParser`, вставка `ON CONFLICT DO NOTHING`, частичный успех, номера строк с заголовка как 1 |
+| Операции | `GET /transactions`, `PATCH /transactions/{id}/category` | фильтры `month`, `category`, `limit`, `offset`; ручная категория (`category_manual`) не перезаписывается повторным импортом |
+| Аналитика | `GET /analytics/summary?month=` | только расходы, по модулю; `changePercent = null` без прошлого месяца; расчёт в `AnalyticsCalculator` (чистая функция, 4 теста) |
+| Цели | `GET/POST/PATCH /goals` | два типа: `saving` и `spending_limit`; у лимита потраченное backend считает по расходам категории за текущий месяц (Asia/Yekaterinburg) |
+| Скидки | `GET /offers`, `GET /offers/{id}` | каталог грузится при старте из `OFFERS_FILE` (upsert по `source_id`); `validTo` включительно, без `validTo` бессрочно, фильтр `region` включает `region = null`; сортировка по `potentialSaving` по убыванию |
 
-1. **Auth.** `POST /auth/register|login|refresh|logout`, BCrypt/Argon2, JWT (access 1 ч, refresh 30 дней, хранится хеш в `refresh_tokens`), `JWT_SECRET` только из окружения, плагин Authentication. `userId` брать из токена, не из тела.
-2. **Импорт.** `POST /transactions/import`: прочитать multipart, загрузить `mcc_mappings` в `Map`, вызвать `CsvImportParser.parse`, затем вставить строки `INSERT ... ON CONFLICT (user_id, external_id) DO NOTHING` и посчитать `duplicates` = повторы в файле + пропущенные вставкой. `InvalidCsvException` → 400 `invalid_csv`, `CsvTooLargeException` → 413 `file_too_large`. Ответ `ImportResult {imported, duplicates, failed, errors}`.
-3. **Транзакции.** `GET /transactions` (фильтры `month`, `category`, пагинация), `PATCH /transactions/{id}/category` (ставит `category_manual = true`; при повторном импорте категория не перезаписывается — сейчас конфликт игнорируется, так что это уже выполняется).
-4. **Аналитика.** `GET /analytics/summary?month=` — только `amount < 0`, по модулю; `changePercent = null`, если в прошлом месяце расходов не было; границы месяца по Asia/Yekaterinburg. Деньги — `BigDecimal`, в JSON строкой с 2 знаками.
-5. **Цели.** `GET/POST/PATCH /goals`. Для `spending_limit` считать потраченное из транзакций (см. ADR 0002).
-6. **Скидки.** Загрузка `fixtures/offers/offers.json` (после слияния PR #3) upsert по `source_id`, пустой/битый файл не очищает каталог; `GET /offers`, `GET /offers/{id}` — `validTo` включительно, без `validTo` бессрочно, `region` включает `null`; `potentialSaving` по правилу контракта. Цены парсить сразу в `BigDecimal`.
-7. **Sync push** (ADR 0002), затем `/ai/recommendation` вместе с T3 (`RuleBasedProvider` обязателен).
+Данные пользователей изолированы: `userId` берётся только из JWT, чужие объекты дают 404 (проверено в smoke-скрипте).
 
-## Что нужно согласовать до реализации
+## Что осталось сделать
 
-- **Контракт целей.** В `docs/api/openapi.yaml` (PR #2) у `Goal` пока нет поля `type` — добавить `type: saving | spending_limit` и для лимита `spentAmount`/прогресс от backend.
-- **Категории предложений.** В БД `offer_categories` — многие-ко-многим, в API у предложения одна `category`. Решить: брать первую категорию или отдавать массив.
-- **`isTest`.** Есть в фикстуре и БД (`offers.is_test`), в API-схему `Offer` не включён: отдавать клиенту или нет.
-- **ТЗ vs контракт.** Главным выбран контракт PR #2 (строки для денег, `month`, snake_case-коды, `errors`/`category`, `open_offers`). ТЗ в этих местах устарело и требует правки.
-- **Порт 8080** на машине разработчика может быть занят (у нас там Apache): задайте `API_PORT` в `.env`.
+1. **`POST /sync/push`** (ADR 0002): применять изменения целей и ручных категорий идемпотентно по `client_change_id`, писать в `sync_changes`. Таблица и ограничения уже есть (миграция V3). `pull`/cursor отложены.
+2. **`GET /ai/recommendation`** вместе с T3: интерфейс `AiRecommendationProvider`, `RuleBasedProvider` (обязателен), `LlmProvider` с таймаутом и валидацией JSON. Числа в текст подставляет backend из агрегата. Сейчас эндпоинта нет.
+3. **Автоматические интеграционные тесты с БД.** Сейчас интеграция проверяется только `scripts/smoke.sh` на запущенном стенде. Стоит добавить Testcontainers и перенести туда сценарии, чтобы их гонял CI (PR #4). До этого CI проверяет только юнит-тесты.
+4. **Мягкое удаление** есть в схеме (`deleted_at`), все выборки его учитывают, но эндпоинтов удаления нет — по плану MVP они не нужны.
+
+## Что нужно согласовать (влияет на контракт)
+
+- **Тип цели в OpenAPI.** В `docs/api/openapi.yaml` (PR #2) у `Goal` нет поля `type`. Backend уже принимает и отдаёт `type: saving | spending_limit`; для лимита `currentAmount` — это потрачено за месяц, считается сервером. Нужно внести в контракт.
+- **Категория предложения.** В БД `offer_categories` многие-ко-многим, в API одна `category`. Сейчас отдаётся первая по коду. Решить: массив или одна основная.
+- **`isTest`.** Есть в фикстуре и БД, в API-схему `Offer` не включён.
+- **Сортировка `/offers`.** Контракт её не задаёт; реализовано «по выгоде». Зафиксировать в OpenAPI.
+- **ТЗ vs контракт.** Главным выбран контракт PR #2 (строки для денег, `month`, snake_case-коды, `errors`/`category`, `open_offers`). ТЗ в этих местах нужно обновить.
+- **Лимиты.** Задан `BUSINESS_ZONE = Asia/Yekaterinburg` для «текущего месяца» в целях и «сегодня» в скидках.
+
+## Как запускать и где подводные камни
+
+- Нужны Docker Desktop и (для тестов вне контейнера) JDK 21.
+- На машине порт 8080 может быть занят (у нас там Apache): задайте `API_PORT` в `.env`.
+- `JWT_SECRET` (32+ символа) обязателен: без него сервер не стартует. Значение по умолчанию в `docker-compose.yml` годится только для разработки — для любого общего окружения задайте свой.
+- Каталог скидок монтируется из `./fixtures` (переменная `FIXTURES_DIR`). До слияния PR #3 файла `fixtures/offers/offers.json` в `main` нет, сервер при этом стартует и пишет в лог, что каталог не загружен.
+- Если запускать `docker compose` из worktree другой ветки, укажите `FIXTURES_DIR` на каталог с нужными фикстурами.
 
 ## Известные ограничения
 
 - Возвраты (положительные суммы) расходы не уменьшают — только `amount < 0`.
-- CSV с переносами строк внутри кавычек не поддерживается (строка читается построчно).
-- Пароль БД и порт по умолчанию — только для разработки.
+- CSV с переносами строк внутри кавычек не поддерживается.
+- Защита от перебора паролей и ограничение частоты запросов не реализованы.
+- Поведение «пустой или битый файл не очищает каталог» реализовано в `OfferCatalogLoader` (проверка до изменений, транзакция с откатом), но на живом стенде не проверялось.
 - CI (PR #4) заработает после слияния PR #1.

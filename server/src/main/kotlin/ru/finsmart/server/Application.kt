@@ -1,9 +1,13 @@
 package ru.finsmart.server
 
+import com.auth0.jwt.JWT
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.BadRequestException
@@ -12,24 +16,37 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import ru.finsmart.server.analytics.analyticsRoutes
+import ru.finsmart.server.auth.AUTH
+import ru.finsmart.server.auth.JwtSettings
+import ru.finsmart.server.auth.authRoutes
+import ru.finsmart.server.categories.categoryRoutes
 import ru.finsmart.server.common.ApiError
+import ru.finsmart.server.common.ApiException
 import ru.finsmart.server.common.AppConfig
 import ru.finsmart.server.common.Database
+import ru.finsmart.server.goals.goalRoutes
 import ru.finsmart.server.health.healthRoutes
+import ru.finsmart.server.offers.OfferCatalogLoader
+import ru.finsmart.server.offers.offerRoutes
+import ru.finsmart.server.transactions.transactionRoutes
+import java.nio.file.Path
 import javax.sql.DataSource
 
 fun main() {
     val config = AppConfig.fromEnv()
     val dataSource = Database.createDataSource(config.db)
     Database.migrate(dataSource)
+    config.offersFile?.let { OfferCatalogLoader.load(dataSource, Path.of(it)) }
 
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {
-        module(dataSource)
+        module(dataSource, JwtSettings(config.jwtSecret))
     }.start(wait = true)
 }
 
-fun Application.module(dataSource: DataSource) {
+fun Application.module(dataSource: DataSource, jwt: JwtSettings) {
     install(ContentNegotiation) {
         json(Json {
             ignoreUnknownKeys = true
@@ -38,8 +55,29 @@ fun Application.module(dataSource: DataSource) {
         })
     }
     install(CallLogging)
+    install(Authentication) {
+        jwt(AUTH) {
+            verifier(JWT.require(jwt.algorithm).build())
+            validate { credential -> credential.payload.subject?.let { JWTPrincipal(credential.payload) } }
+            challenge { _, _ ->
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    ApiError(code = "unauthorized", message = "Требуется авторизация"),
+                )
+            }
+        }
+    }
     install(StatusPages) {
+        exception<ApiException> { call, e ->
+            call.respond(e.status, ApiError(code = e.code, message = e.message ?: "", details = e.details))
+        }
         exception<BadRequestException> { call, _ ->
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ApiError(code = "validation_error", message = "Некорректные данные"),
+            )
+        }
+        exception<SerializationException> { call, _ ->
             call.respond(
                 HttpStatusCode.BadRequest,
                 ApiError(code = "validation_error", message = "Некорректные данные"),
@@ -62,5 +100,11 @@ fun Application.module(dataSource: DataSource) {
 
     routing {
         healthRoutes(dataSource)
+        authRoutes(dataSource, jwt)
+        categoryRoutes(dataSource)
+        transactionRoutes(dataSource)
+        analyticsRoutes(dataSource)
+        goalRoutes(dataSource)
+        offerRoutes(dataSource)
     }
 }
