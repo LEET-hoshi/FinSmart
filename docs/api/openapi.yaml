@@ -200,7 +200,7 @@ paths:
       description: |
         Файл UTF-8 с заголовком `operation_id,date,amount,currency,description,mcc`.
 
-        - `operation_id` — UUID, уникален в рамках пользователя;
+        - `operation_id` — непустая строка до 64 символов (в выписках банков это не всегда UUID), уникальна в рамках пользователя;
         - `date` — `YYYY-MM-DD`;
         - `amount` — десятичное число через точку, не более 2 знаков после точки, не 0;
         - `currency` — `RUB`;
@@ -745,7 +745,7 @@ components:
           format: uuid
         operationId:
           type: string
-          format: uuid
+          maxLength: 64
         date:
           type: string
           format: date
