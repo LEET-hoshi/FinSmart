@@ -12,5 +12,7 @@ RUN ./gradlew --no-daemon installDist -x test
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/install/finsmart-server /app
+RUN useradd --system --no-create-home finsmart
+USER finsmart
 EXPOSE 8080
 CMD ["/app/bin/finsmart-server"]
