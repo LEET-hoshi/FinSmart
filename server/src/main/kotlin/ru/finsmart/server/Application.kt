@@ -41,6 +41,9 @@ import ru.finsmart.server.transactions.TransactionService
 import ru.finsmart.server.transactions.transactionRoutes
 import java.nio.file.Path
 import javax.sql.DataSource
+import ru.finsmart.server.recommendations.RecommendationService
+import ru.finsmart.server.recommendations.RuleBasedProvider
+import ru.finsmart.server.recommendations.recommendationRoutes
 
 fun main() {
     val config = AppConfig.fromEnv()
@@ -59,6 +62,10 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
     val transactionService = TransactionService(TransactionRepository(dataSource))
     val analyticsRepository = AnalyticsRepository(dataSource)
     val analyticsService = AnalyticsService(analyticsRepository)
+    val recommendationService = RecommendationService(
+    analyticsService,
+    RuleBasedProvider()
+)
     val categoryRepository = CategoryRepository(dataSource)
 
     install(ContentNegotiation) {
@@ -119,6 +126,7 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
         authenticate(JWT_AUTH) {
             transactionRoutes(transactionService)
             analyticsRoutes(analyticsService)
+            recommendationRoutes(recommendationService)
             goalRoutes(dataSource, analyticsRepository)
             offerRoutes(dataSource)
         }
