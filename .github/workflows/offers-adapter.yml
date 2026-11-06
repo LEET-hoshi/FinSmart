@@ -1,0 +1,35 @@
+name: offers-adapter
+
+on:
+  pull_request:
+    paths:
+      - "scripts/update-magnit-offers*"
+      - "tools/api-anything/**"
+      - "fixtures/offers/magnit-source-sample.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/offers-adapter.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/update-magnit-offers*"
+      - "tools/api-anything/**"
+      - "fixtures/offers/magnit-source-sample.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/offers-adapter.yml"
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm test

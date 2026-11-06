@@ -36,17 +36,13 @@ const forceUpdate = process.argv.includes("--force");
  * Преобразует цену вида "1 338,99 ₽" в строку "1338.99".
  * Если цены нет или она записана неправильно, возвращает null.
  */
-function normalizePrice(value) {
+export function normalizePrice(value) {
     if (value === undefined || value === null) {
         return null;
     }
 
-    const cleanedValue = String(value)
-        .replace(/\s/g, "")
-        .replace(",", ".")
-        .replace(/[^\d.]/g, "");
-
-    if (cleanedValue === "") {
+    const cleanedValue = String(value).trim().replace(/[\s\u00a0\u202f]/g, "").replace(/₽$/, "").replace(",", ".");
+    if (!/^\d+(?:\.\d{1,2})?$/.test(cleanedValue)) {
         return null;
     }
 
@@ -63,8 +59,8 @@ function normalizePrice(value) {
  * Из ссылки товара получает постоянный идентификатор.
  * Например, из /promo-product/2189944-kofe получится magnit-2189944.
  */
-function getSourceId(url) {
-    const match = String(url).match(/\/promo-product\/(\d+)-/);
+export function getSourceId(url) {
+    const match = String(url).match(/^https:\/\/magnit\.ru\/promo-product\/(\d+)-[^/]+/);
     return match ? `magnit-${match[1]}` : null;
 }
 
@@ -72,7 +68,7 @@ function getSourceId(url) {
  * Определяет категорию FinSmart по названию товара.
  * Большинство товаров Магнита относятся к продуктам.
  */
-function getCategory(title) {
+export function getCategory(title) {
     const normalizedTitle = title.toLowerCase();
 
     const healthWords = [
@@ -117,12 +113,12 @@ function catalogIsFresh() {
 /*
  * Получает данные с помощью сохранённого правила API Anything.
  */
-function loadMagnitOffers() {
-    const result = spawnSync(
-        "npx",
+export function loadMagnitOffers({ cliPath = resolve(projectDirectory, "node_modules", "api-anything", "dist", "cli.js"), run = spawnSync, timeoutMs = 30_000 } = {}) {
+    console.log("Этап: получение данных");
+    const result = run(
+        process.execPath,
         [
-            "-y",
-            "api-anything",
+            cliPath,
             "call",
             "magnit-ru",
             "listOffers",
@@ -131,7 +127,7 @@ function loadMagnitOffers() {
             cwd: projectDirectory,
             encoding: "utf8",
             maxBuffer: 10 * 1024 * 1024,
-            timeout: 30_000,
+            timeout: timeoutMs,
             env: {
                 ...process.env,
                 API_ANYTHING_HOME: apiAnythingDirectory,
@@ -140,15 +136,17 @@ function loadMagnitOffers() {
     );
 
     if (result.error) {
-        throw new Error(`Не удалось запустить API Anything: ${result.error.message}`);
+        const cause = result.error.code === "ETIMEDOUT" ? "превышен лимит времени 30 секунд" : result.error.code ?? "ошибка запуска";
+        throw new Error(`Не удалось получить данные через API Anything: ${cause}`);
     }
 
     if (result.status !== 0) {
         throw new Error(
-            `API Anything завершился с ошибкой: ${result.stderr.trim()}`,
+            `API Anything завершился с ошибкой (код ${result.status}); проверьте доступность сайта и установку через npm ci`,
         );
     }
 
+    console.log("Этап: разбор ответа");
     let response;
 
     try {
@@ -159,7 +157,7 @@ function loadMagnitOffers() {
 
     if (!response.ok) {
         throw new Error(
-            `Источник вернул ошибку: ${response.reason ?? response.class ?? "неизвестная ошибка"}`,
+            `Источник вернул ошибку: ${response.class ?? "неизвестная ошибка"}`,
         );
     }
 
@@ -173,7 +171,7 @@ function loadMagnitOffers() {
 /*
  * Преобразует данные Магнита в формат FinSmart.
  */
-function convertOffers(sourceOffers) {
+export function convertOffers(sourceOffers) {
     const checkedAt = new Date().toISOString();
     const uniqueOffers = new Map();
 
@@ -216,24 +214,24 @@ function convertOffers(sourceOffers) {
  * Записывает результат через временный файл.
  * Старый каталог заменяется только после успешного получения данных.
  */
-function saveOffers(offers) {
+export function saveOffers(offers, destination = outputFile) {
     if (offers.length === 0) {
         throw new Error(
             "После преобразования не осталось корректных предложений",
         );
     }
 
-    mkdirSync(dirname(outputFile), { recursive: true });
+    mkdirSync(dirname(destination), { recursive: true });
 
-    const temporaryFile = `${outputFile}.tmp`;
+    const temporaryFile = `${destination}.${process.pid}.tmp`;
     const json = `${JSON.stringify(offers, null, 2)}\n`;
 
     writeFileSync(temporaryFile, json, "utf8");
-    renameSync(temporaryFile, outputFile);
+    renameSync(temporaryFile, destination);
 }
 
-function main() {
-    if (!forceUpdate && catalogIsFresh()) {
+export function updateCatalog({ force = forceUpdate, destination = outputFile, fetchOffers = loadMagnitOffers, now = Date.now } = {}) {
+    if (!force && destination === outputFile && catalogIsFresh()) {
         console.log(
             "Каталог обновлялся меньше 24 часов назад. Обновление не требуется.",
         );
@@ -242,21 +240,29 @@ function main() {
     }
 
     console.log("Получаем предложения Магнита...");
+    const deadline = now() + 30_000;
 
-    const sourceOffers = loadMagnitOffers();
+    const sourceOffers = fetchOffers({ timeoutMs: Math.max(1, deadline - now()) });
+    console.log("Этап: преобразование данных");
     const convertedOffers = convertOffers(sourceOffers);
 
-    saveOffers(convertedOffers);
+    if (now() >= deadline) {
+        throw new Error("Превышен общий лимит 30 секунд до записи каталога");
+    }
+    console.log("Этап: запись файла");
+    saveOffers(convertedOffers, destination);
 
     console.log(`Получено предложений: ${sourceOffers.length}`);
     console.log(`Сохранено предложений: ${convertedOffers.length}`);
-    console.log(`Файл: ${outputFile}`);
+    console.log(`Файл: ${destination}`);
 }
 
-try {
-    main();
-} catch (error) {
-    console.error(`Ошибка обновления каталога: ${error.message}`);
-    console.error("Предыдущий успешно сохранённый каталог не изменён.");
-    process.exitCode = 1;
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    try {
+        updateCatalog();
+    } catch (error) {
+        console.error(`Ошибка обновления каталога: ${error.message}`);
+        console.error("Предыдущий успешно сохранённый каталог не изменён.");
+        process.exitCode = 1;
+    }
 }
