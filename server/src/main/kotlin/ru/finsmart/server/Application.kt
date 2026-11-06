@@ -44,6 +44,9 @@ import javax.sql.DataSource
 import ru.finsmart.server.recommendations.RecommendationService
 import ru.finsmart.server.recommendations.RuleBasedProvider
 import ru.finsmart.server.recommendations.recommendationRoutes
+import ru.finsmart.server.sync.SyncRepository
+import ru.finsmart.server.sync.SyncService
+import ru.finsmart.server.sync.syncRoutes
 
 fun main() {
     val config = AppConfig.fromEnv()
@@ -67,6 +70,7 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
     RuleBasedProvider()
 )
     val categoryRepository = CategoryRepository(dataSource)
+    val syncService = SyncService(SyncRepository(dataSource))
 
     install(ContentNegotiation) {
         json(Json {
@@ -129,6 +133,7 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
             recommendationRoutes(recommendationService)
             goalRoutes(dataSource, analyticsRepository)
             offerRoutes(dataSource)
+            syncRoutes(syncService)
         }
     }
 }
