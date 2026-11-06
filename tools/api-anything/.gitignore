@@ -1,0 +1,4 @@
+*
+!.gitignore
+!sites/
+!sites/*.json
