@@ -42,6 +42,7 @@ dependencies {
 
     testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
     testImplementation(kotlin("test"))
+    testImplementation("org.testcontainers:testcontainers-postgresql:2.0.2")
 }
 
 tasks.test {
