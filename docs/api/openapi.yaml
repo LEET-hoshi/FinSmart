@@ -417,12 +417,22 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/GoalCreate"
-            example:
-              title: Тратить меньше на кафе
-              targetAmount: "5000.00"
-              currentAmount: "0.00"
-              deadline: "2026-11-30"
-              category: cafes
+            examples:
+              saving:
+                summary: Накопление
+                value:
+                  title: Отпуск
+                  type: saving
+                  targetAmount: "50000"
+                  currentAmount: "12000"
+                  deadline: "2027-06-01"
+              spendingLimit:
+                summary: Лимит расходов на категорию
+                value:
+                  title: Тратить меньше на кафе
+                  type: spending_limit
+                  targetAmount: "5000"
+                  category: cafes
       responses:
         "201":
           description: Созданная цель
@@ -473,6 +483,8 @@ paths:
         Предложения без `validTo` считаются бессрочными.
         Фильтр `region` возвращает предложения этого региона и предложения без региона (`region: null`, действуют везде).
         Пустой `items` означает, что подходящих скидок нет (это не ошибка).
+        Фильтр `category` возвращает предложение, если эта категория есть среди всех его категорий, а не только совпадает с полем `category`.
+        Порядок: по `potentialSaving` по убыванию (предложения без выгоды — в конце), затем по `validTo` (бессрочные — в конце), затем по `title`.
       parameters:
         - name: category
           in: query
@@ -837,17 +849,20 @@ components:
 
     Goal:
       type: object
-      required: [id, title, targetAmount, currentAmount, progressPercent, deadline, category, createdAt, updatedAt]
+      required: [id, title, type, targetAmount, currentAmount, progressPercent, deadline, category, createdAt, updatedAt]
       properties:
         id:
           type: string
           format: uuid
         title:
           type: string
+        type:
+          $ref: "#/components/schemas/GoalType"
         targetAmount:
           $ref: "#/components/schemas/Money"
         currentAmount:
           $ref: "#/components/schemas/Money"
+          description: Для `saving` — накоплено (вводит пользователь). Для `spending_limit` — потрачено в категории цели за текущий месяц (считает сервер).
         progressPercent:
           type: number
           description: currentAmount / targetAmount * 100, не больше 100, 1 знак после точки
@@ -865,6 +880,13 @@ components:
           type: string
           format: date-time
 
+    GoalType:
+      type: string
+      enum: [saving, spending_limit]
+      description: |
+        `saving` — накопить `targetAmount`; прогресс задаёт пользователь через `currentAmount`.
+        `spending_limit` — не потратить в категории больше `targetAmount` за месяц; `category` обязательна, `currentAmount` считает сервер.
+
     GoalCreate:
       type: object
       required: [title, targetAmount]
@@ -873,6 +895,10 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        type:
+          allOf:
+            - $ref: "#/components/schemas/GoalType"
+          default: saving
         targetAmount:
           $ref: "#/components/schemas/MoneyInput"
         currentAmount:
@@ -884,7 +910,9 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CategoryCode"
             - type: 'null'
-      description: targetAmount > 0, currentAmount >= 0 (по умолчанию 0)
+      description: |
+        targetAmount > 0, currentAmount >= 0 (по умолчанию 0).
+        Для `spending_limit` поле `category` обязательно, а `currentAmount` игнорируется.
     GoalUpdate:
       type: object
       minProperties: 1
@@ -904,7 +932,10 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CategoryCode"
             - type: 'null'
-      description: targetAmount > 0, currentAmount >= 0
+      description: |
+        targetAmount > 0, currentAmount >= 0.
+        `type` после создания не меняется.
+        Для `spending_limit` `currentAmount` игнорируется, а `category` нельзя сбросить в `null`.
     Offer:
       type: object
       required: [id, sourceId, title, category, regularPrice, salePrice, currency, validFrom, validTo, conditions, url, region, checkedAt, potentialSaving]
@@ -918,6 +949,7 @@ components:
           type: string
         category:
           $ref: "#/components/schemas/CategoryCode"
+          description: Основная категория предложения. Если в каталоге их несколько — первая по коду; фильтр `/offers?category=` учитывает все.
         regularPrice:
           anyOf:
             - $ref: "#/components/schemas/Money"
