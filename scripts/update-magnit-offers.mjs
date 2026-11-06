@@ -118,9 +118,18 @@ function catalogIsFresh() {
  * Получает данные с помощью сохранённого правила API Anything.
  */
 function loadMagnitOffers() {
+    // npm ships npx as a .cmd wrapper on Windows. Invoking the underlying
+    // JavaScript entry point through Node avoids cmd.exe and keeps timeout
+    // handling reliable. POSIX distributions expose npx as an executable.
+    const useWindowsNpxCli = process.platform === "win32";
+    const npxCommand = useWindowsNpxCli ? process.execPath : "npx";
+    const npxArguments = useWindowsNpxCli
+        ? [join(dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js")]
+        : [];
     const result = spawnSync(
-        "npx",
+        npxCommand,
         [
+            ...npxArguments,
             "-y",
             "api-anything",
             "call",
