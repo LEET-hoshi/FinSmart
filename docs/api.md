@@ -1,6 +1,6 @@
 # API FinSmart для Android: подключение и примеры
 
-Полный контракт — [`docs/api/openapi.yaml`](api/openapi.yaml). Здесь — как подключиться к локальному backend и реальные ответы стенда (собраны 07.11.2026 на `docker compose up` с фикстурами из `fixtures/`). Длинные списки в примерах сокращены — это отмечено под примером.
+Полный контракт — [`docs/api/openapi.yaml`](api/openapi.yaml). Здесь — как подключиться к локальному backend и реальные ответы стенда (собраны 07–08.11.2026 на `docker compose up` с фикстурами из `fixtures/`). Длинные списки в примерах сокращены — это отмечено под примером.
 
 ## Подключение
 
@@ -329,6 +329,85 @@ GET /ai/recommendation?month=2026-10  → 200
 ```
 
 `month` обязателен. `actionType`: `open_offers`, `open_goals`, `open_transactions` или `none`; при `open_offers` экран скидок открывается с фильтром `category`. Для месяца без операций приходит нейтральная рекомендация с `"category": null`.
+
+## Синхронизация офлайн-изменений
+
+```
+POST /sync/push  → 200
+```
+
+Изменения, сделанные без сети, клиент складывает в локальную очередь и отправляет пачкой, когда сеть появится. Поддерживаются два вида изменений:
+
+- `goal` — создание или изменение цели. Новую цель клиент создаёт со своим UUID в `entityId`: если цели с таким id нет — она создаётся, если есть и принадлежит пользователю — обновляется. `payload` — поля как у `POST /goals` (для новой) или `PATCH /goals/{id}` (для существующей), с теми же правилами.
+- `transaction_category` — ручная смена категории операции, `entityId` — id операции, `payload` — `{"category": "<код>"}`.
+
+```json
+{
+  "changes": [
+    {
+      "clientChangeId": "7d1e4b2a-5c3f-4a8e-9b6d-2f0c8e1a3b57",
+      "entityType": "goal",
+      "entityId": "4360132c-4ee3-43aa-80f1-657843bb1f96",
+      "operation": "upsert",
+      "payload": {"title": "Отпуск", "targetAmount": "50000", "deadline": "2027-06-01"}
+    },
+    {
+      "clientChangeId": "a2c9e7f1-0b3d-4c6a-8e5f-9d1b2c3a4e68",
+      "entityType": "transaction_category",
+      "entityId": "dbdc938c-06d4-4cf1-b605-15d717f0e6ce",
+      "operation": "upsert",
+      "payload": {"category": "cafes"}
+    }
+  ]
+}
+```
+
+```json
+{
+  "results": [
+    {"clientChangeId": "7d1e4b2a-5c3f-4a8e-9b6d-2f0c8e1a3b57", "status": "applied", "entityType": "goal", "entityId": "4360132c-4ee3-43aa-80f1-657843bb1f96", "version": 1, "error": null},
+    {"clientChangeId": "a2c9e7f1-0b3d-4c6a-8e5f-9d1b2c3a4e68", "status": "applied", "entityType": "transaction_category", "entityId": "dbdc938c-06d4-4cf1-b605-15d717f0e6ce", "version": 1, "error": null}
+  ],
+  "cursor": 3
+}
+```
+
+`clientChangeId` — UUID изменения: клиент создаёт его один раз, когда кладёт изменение в очередь, и отправляет **тот же** при каждой повторной попытке. По нему сервер отличает повтор от нового изменения.
+
+Результаты приходят по каждому изменению в том же порядке. Что делать с изменением в очереди:
+
+| `status` | Значит | Очередь |
+|---|---|---|
+| `applied` | Применено, `version` — новая версия сущности | Удалить |
+| `duplicate` | Это изменение уже было принято раньше (повторная отправка), ничего не поменялось | Удалить |
+| `rejected` | Отклонено, причина в `error` | Удалить и показать ошибку — повтор не поможет |
+
+Повтор той же пачки, обновление цели, удаление и лимит без категории в одном запросе:
+
+```json
+{
+  "results": [
+    {"clientChangeId": "7d1e4b2a-5c3f-4a8e-9b6d-2f0c8e1a3b57", "status": "duplicate", "entityType": "goal", "entityId": "4360132c-4ee3-43aa-80f1-657843bb1f96", "version": 1, "error": null},
+    {"clientChangeId": "c4f8a1d3-6e2b-4f9c-a7d5-3b8e1f0c2a96", "status": "applied", "entityType": "goal", "entityId": "4360132c-4ee3-43aa-80f1-657843bb1f96", "version": 2, "error": null},
+    {"clientChangeId": "e6b3d9f2-1a4c-4e8d-b5f7-0c2a9e8d1b34", "status": "rejected", "entityType": "goal", "entityId": "4360132c-4ee3-43aa-80f1-657843bb1f96", "version": null,
+     "error": {"code": "unsupported_operation", "message": "Удаление через синхронизацию пока не поддерживается", "details": null}},
+    {"clientChangeId": "f1a7c3e9-4d2b-4b6f-8a1e-5c9d3f7b2e80", "status": "rejected", "entityType": "goal", "entityId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "version": null,
+     "error": {"code": "validation_error", "message": "Некорректные данные", "details": {"category": "Для лимита категория обязательна"}}}
+  ],
+  "cursor": 4
+}
+```
+
+- Ошибка в одном изменении не отменяет остальные.
+- Чужая или несуществующая операция, цель другого пользователя → `rejected` с `error.code: not_found`.
+- `operation: delete` пока не поддерживается → `rejected` с `unsupported_operation`.
+- Конфликты: побеждает последнее принятое изменение.
+- `cursor` — номер последнего принятого изменения пользователя в общем журнале сервера (не количество изменений); понадобится для будущего `GET /sync/pull`, сейчас его можно не хранить. Если изменений ещё не было — `null`.
+- В пачке от 1 до 100 изменений. Пустая пачка, больше 100 или неверная структура → `400` для всего запроса, в `details` указано изменение и поле:
+
+```json
+{"code": "validation_error", "message": "Некорректные данные", "details": {"changes[0].clientChangeId": "Ожидается UUID", "changes[0].entityType": "goal или transaction_category"}}
+```
 
 ## Типовые ошибки
 
