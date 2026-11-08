@@ -82,8 +82,19 @@ data class Goal(
     val progressPercent: Double,
     val deadline: String?,
     val category: String?,
+    val type: String,
     val createdAt: String,
     val updatedAt: String
+)
+
+// Модели для создания цели
+data class GoalCreate(
+    val title: String,
+    val targetAmount: String,
+    val currentAmount: String? = null,
+    val deadline: String? = null,
+    val category: String? = null,
+    val type: String = "saving" // По умолчанию - накопление
 )
 
 // Модели для импорта
@@ -104,5 +115,3 @@ data class Recommendation(
     val actionLabel: String?,
     val source: String
 )
-class ApiModels {
-}

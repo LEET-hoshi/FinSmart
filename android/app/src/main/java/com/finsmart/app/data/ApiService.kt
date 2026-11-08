@@ -43,7 +43,7 @@ interface ApiService {
     suspend fun getGoals(): Response<List<Goal>>
 
     @POST("goals")
-    suspend fun createGoal(@Body body: Map<String, String?>): Response<Goal>
+    suspend fun createGoal(@Body body: GoalCreate): Response<Goal>
 
     @GET("ai/recommendation")
     suspend fun getRecommendation(@Query("month") month: String): Response<Recommendation>

@@ -3,10 +3,11 @@ package com.finsmart.app.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.finsmart.app.data.local.AppDatabase as LocalDb
 import com.finsmart.app.data.AppRepository
 import com.finsmart.app.data.RetrofitClient
+import com.finsmart.app.data.local.AppDatabase
 import com.finsmart.app.data.model.Goal
+import com.finsmart.app.data.model.GoalCreate // <-- ВАЖНЫЙ ИМПОРТ
 import com.finsmart.app.utils.TokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,8 +16,7 @@ import kotlinx.coroutines.launch
 class GoalsViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
     private val api = RetrofitClient.createApi(context)
-    // ИСПРАВЛЕННЫЙ ИМПОРТ:
-    private val db = LocalDb.getInstance(context)
+    private val db = AppDatabase.getInstance(context)
     private val tokenManager = TokenManager(context)
     private val repository = AppRepository(context, api, db, tokenManager)
 
@@ -33,8 +33,6 @@ class GoalsViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadGoals() {
         viewModelScope.launch {
             _isLoading.value = true
-            // В нашем репозитории пока нет метода сохранения целей в Room,
-            // поэтому для MVP мы просто запрашиваем их из сети
             try {
                 val response = api.getGoals()
                 if (response.isSuccessful && response.body() != null) {
@@ -51,14 +49,18 @@ class GoalsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val body = mapOf(
-                    "title" to title,
-                    "targetAmount" to targetAmount,
-                    "currentAmount" to "0.00"
+                // ИСПОЛЬЗУЕМ НОВУЮ МОДЕЛЬ GoalCreate ВМЕСТО mapOf
+                val body = GoalCreate(
+                    title = title,
+                    targetAmount = targetAmount,
+                    currentAmount = "0.00"
                 )
                 val response = api.createGoal(body)
                 if (response.isSuccessful) {
                     loadGoals() // Обновляем список после создания
+                } else {
+                    // Для отладки: выводим код ошибки, если сервер не принял запрос
+                    android.util.Log.e("GOAL_ERROR", "Ошибка: ${response.code()} ${response.errorBody()?.string()}")
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
