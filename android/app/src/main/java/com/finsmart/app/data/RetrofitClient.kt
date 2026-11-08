@@ -10,9 +10,12 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
     private const val BASE_URL = "http://10.0.2.2:8080/"
+    private var tokenManager: TokenManager? = null
 
     fun createApi(context: Context): ApiService {
-        val tokenManager = TokenManager(context)
+        if (tokenManager == null) {
+            tokenManager = TokenManager(context)
+        }
 
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
@@ -21,7 +24,9 @@ object RetrofitClient {
         val client = OkHttpClient.Builder()
             .addInterceptor(logging)
             .addInterceptor { chain ->
-                val token = runBlocking { tokenManager.getToken() }
+                // Блокирующий вызов, чтобы гарантированно получить токен
+                val token = runBlocking { tokenManager?.getToken() }
+                android.util.Log.d("FIN_TOKEN", "Полученный токен: $token")
                 val request = chain.request().newBuilder()
                 if (token != null) {
                     request.addHeader("Authorization", "Bearer $token")

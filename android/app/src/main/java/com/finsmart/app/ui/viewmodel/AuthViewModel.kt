@@ -18,8 +18,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val tokenManager = TokenManager(context)
     private val repository = AppRepository(context, api, db, tokenManager)
 
-    // Состояния экрана
-    private val _isLoggedIn = MutableStateFlow<Boolean?>(null) // null = загрузка, true/false = результат
+    private val _isLoggedIn = MutableStateFlow<Boolean?>(null) // null = проверка
     val isLoggedIn: StateFlow<Boolean?> = _isLoggedIn
 
     private val _isLoading = MutableStateFlow(false)
