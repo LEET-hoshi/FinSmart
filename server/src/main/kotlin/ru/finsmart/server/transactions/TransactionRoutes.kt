@@ -5,6 +5,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.request.contentLength
 import io.ktor.server.request.contentType
 import io.ktor.server.request.receiveMultipart
@@ -19,15 +20,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.finsmart.server.auth.userId
 import ru.finsmart.server.common.ApiException
+import ru.finsmart.server.common.IMPORT_RATE_LIMIT
 import ru.finsmart.server.common.Params
 import ru.finsmart.server.common.receiveJson
 import java.io.IOException
 
 fun Route.transactionRoutes(service: TransactionService) {
     route("/transactions") {
-        post("/import") {
-            val bytes = call.receiveCsvFile()
-            call.respond(service.import(call.userId(), bytes))
+        rateLimit(IMPORT_RATE_LIMIT) {
+            post("/import") {
+                val bytes = call.receiveCsvFile()
+                call.respond(service.import(call.userId(), bytes))
+            }
         }
         get {
             val params = call.request.queryParameters

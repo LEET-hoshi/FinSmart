@@ -31,6 +31,7 @@ dependencies {
     implementation("io.ktor:ktor-server-call-logging-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-auth-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-auth-jwt-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-rate-limit-jvm:$ktorVersion")
     implementation("at.favre.lib:bcrypt:0.10.2")
 
     implementation("org.postgresql:postgresql:42.7.7")
@@ -42,6 +43,7 @@ dependencies {
 
     testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
     testImplementation(kotlin("test"))
+    testImplementation("org.testcontainers:testcontainers-postgresql:2.0.2")
 }
 
 tasks.test {

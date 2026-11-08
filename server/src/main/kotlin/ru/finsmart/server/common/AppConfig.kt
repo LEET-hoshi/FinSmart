@@ -7,6 +7,7 @@ data class AppConfig(
     val db: DbConfig,
     val jwt: JwtConfig,
     val offersFile: String? = null,
+    val rateLimit: RateLimitConfig = RateLimitConfig(),
 ) {
     companion object {
         private const val MIN_SECRET_LENGTH = 32
@@ -27,7 +28,23 @@ data class AppConfig(
                 refreshTtl = Duration.ofDays(env["REFRESH_TOKEN_TTL_DAYS"]?.toLongOrNull() ?: 30),
             ),
             offersFile = env["OFFERS_FILE"]?.takeIf { it.isNotBlank() },
+            rateLimit = RateLimitConfig(
+                authPerMinute = env.positiveInt("RATE_LIMIT_AUTH_PER_MINUTE") ?: RateLimitConfig.DEFAULT_AUTH_PER_MINUTE,
+                importPerMinute = env.positiveInt("RATE_LIMIT_IMPORT_PER_MINUTE") ?: RateLimitConfig.DEFAULT_IMPORT_PER_MINUTE,
+            ),
         )
+
+        private fun Map<String, String>.positiveInt(key: String): Int? = this[key]?.toIntOrNull()?.takeIf { it > 0 }
+    }
+}
+
+data class RateLimitConfig(
+    val authPerMinute: Int = DEFAULT_AUTH_PER_MINUTE,
+    val importPerMinute: Int = DEFAULT_IMPORT_PER_MINUTE,
+) {
+    companion object {
+        const val DEFAULT_AUTH_PER_MINUTE = 10
+        const val DEFAULT_IMPORT_PER_MINUTE = 10
     }
 }
 

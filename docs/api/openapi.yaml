@@ -83,6 +83,8 @@ paths:
                 $ref: "#/components/schemas/AuthTokens"
         "400":
           $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "409":
           description: Email уже занят
           content:
@@ -124,6 +126,8 @@ paths:
                 code: invalid_credentials
                 message: Неверный email или пароль
                 details: null
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /auth/refresh:
     post:
@@ -211,7 +215,7 @@ paths:
         Ошибочные строки не мешают сохранению корректных.
         Номер строки `line` — номер строки в файле: заголовок — строка 1, первая операция — строка 2.
 
-        Ограничения: файл до 1 МБ и до 5000 строк данных.
+        Ограничения: файл до 1 МБ и до 5000 строк данных; не больше 10 импортов в минуту на пользователя (`RATE_LIMIT_IMPORT_PER_MINUTE`).
       requestBody:
         required: true
         content:
@@ -264,6 +268,8 @@ paths:
                 code: file_too_large
                 message: Файл слишком большой
                 details: null
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /transactions:
     get:
@@ -567,6 +573,24 @@ components:
         format: uuid
 
   responses:
+    TooManyRequests:
+      description: |
+        Превышен лимит запросов. `POST /auth/register` и `POST /auth/login` — не больше 10 в минуту с одного IP (`RATE_LIMIT_AUTH_PER_MINUTE`),
+        `POST /transactions/import` — не больше 10 в минуту на пользователя (`RATE_LIMIT_IMPORT_PER_MINUTE`). `/auth/refresh` и `/auth/logout` не ограничены.
+        Повторить запрос можно через `Retry-After` секунд.
+      headers:
+        Retry-After:
+          description: Через сколько секунд можно повторить запрос
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: too_many_requests
+            message: Слишком много запросов, попробуйте позже
+            details: null
     Unauthorized:
       description: Нет access-токена, он недействителен или истёк. Клиент вызывает /auth/refresh и повторяет запрос.
       content:
