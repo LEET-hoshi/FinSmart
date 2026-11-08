@@ -57,6 +57,9 @@ POST /auth/login             → 200
 | email уже занят | `409` `email_taken` |
 | некорректный email или пароль короче 8 символов | `400` `validation_error`, `details`: `{"email": "...", "password": "..."}` |
 | неверный email или пароль при входе | `401` `invalid_credentials` |
+| больше 10 запросов входа и регистрации в минуту с одного IP | `429` `too_many_requests`, заголовок `Retry-After` — через сколько секунд повторить |
+
+`/auth/refresh` и `/auth/logout` под этот лимит не попадают.
 
 Сохранять нужно **оба** токена: `accessToken` живёт 1 час (`expiresIn` в секундах), `refreshToken` — 30 дней. Хранить их — в защищённом хранилище (EncryptedSharedPreferences / Keystore), не в Room.
 
@@ -136,7 +139,7 @@ Content-Type: multipart/form-data, поле file — CSV-файл (до 1 МБ �
 
 В примере 3 из 12 ошибок; в настоящем ответе `errors` содержит все 12.
 
-Поле с числом ошибочных строк называется `failed`. Файл пустой, без поля `file` или с неверным заголовком → `400` `invalid_csv`; больше 1 МБ или 5000 строк → `413` `file_too_large`.
+Поле с числом ошибочных строк называется `failed`. Файл пустой, без поля `file` или с неверным заголовком → `400` `invalid_csv`; больше 1 МБ или 5000 строк → `413` `file_too_large`; больше 10 импортов в минуту от одного пользователя → `429` `too_many_requests`.
 
 ## Операции
 
@@ -340,6 +343,7 @@ GET /ai/recommendation?month=2026-10  → 200
 | 409 | `email_taken` | Email уже зарегистрирован |
 | 413 | `file_too_large` | CSV больше 1 МБ или 5000 строк |
 | 415 | `unsupported_media_type` | Неверный `Content-Type`: для JSON-запросов нужен `application/json`, для импорта — `multipart/form-data` |
+| 429 | `too_many_requests` | Превышен лимит: вход и регистрация — 10 в минуту с IP, импорт — 10 в минуту на пользователя. Повторить через `Retry-After` секунд |
 
 ## Проверка с компьютера
 
