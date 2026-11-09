@@ -25,7 +25,15 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    // Новые состояния для P1
+    private val _isOffline = MutableStateFlow(false)
+    val isOffline: StateFlow<Boolean> = _isOffline
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
     init {
+        // Слушаем изменения из базы (кэш)
         viewModelScope.launch {
             repository.getOffersFlow().collect { list ->
                 _offers.value = list
@@ -36,7 +44,20 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
     fun syncData(category: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.syncOffers(category)
+            _isOffline.value = false
+            _error.value = null
+
+            // Проверяем, есть ли данные в кэше, чтобы знать, что показать при ошибке
+            val hasCache = _offers.value.isNotEmpty()
+
+            val success = repository.syncOffers(category) // Нужно, чтобы repo возвращал Boolean
+            if (!success) {
+                if (hasCache) {
+                    _isOffline.value = true // Нет сети, но есть кэш
+                } else {
+                    _error.value = "Ошибка загрузки скидок. Проверьте сеть."
+                }
+            }
             _isLoading.value = false
         }
     }

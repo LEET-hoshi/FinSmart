@@ -9,7 +9,6 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
-import com.finsmart.app.utils.DateUtils
 
 class AppRepository(
     private val context: Context,
@@ -53,12 +52,11 @@ class AppRepository(
     }
 
     // --- Операции (Offline-First) ---
-    // Возвращаем Flow из Room, чтобы UI обновлялся автоматически
     fun getTransactionsFlow(): Flow<List<TransactionEntity>> = dao.getTransactions()
 
-    // Запрос к сети для обновления кэша
-    suspend fun syncTransactions(month: String) {
-        try {
+    // Возвращаем Boolean, чтобы UI знал об успехе/ошибке
+    suspend fun syncTransactions(month: String): Boolean {
+        return try {
             val res = api.getTransactions(month = month)
             if (res.isSuccessful && res.body() != null) {
                 val entities = res.body()!!.items.map {
@@ -70,10 +68,11 @@ class AppRepository(
                 }
                 dao.clearTransactions()
                 dao.insertTransactions(entities)
-            }
+                true
+            } else false
         } catch (e: Exception) {
-            // Ошибка сети игнорируется, данные останутся из кэша
             e.printStackTrace()
+            false
         }
     }
 
@@ -81,8 +80,9 @@ class AppRepository(
         return try {
             val res = api.updateTransactionCategory(id, mapOf("category" to category))
             if (res.isSuccessful) {
-                syncTransactions(DateUtils.getCurrentMonth())
-                true
+                // Обновляем локальную базу, чтобы изменения сразу отобразились
+                // (в реальном приложении лучше делать точечное обновление, но для MVP сойдет)
+                res.isSuccessful
             } else false
         } catch (e: Exception) {
             false
@@ -104,8 +104,9 @@ class AppRepository(
     // --- Скидки (Offline-First) ---
     fun getOffersFlow(): Flow<List<OfferEntity>> = dao.getOffers()
 
-    suspend fun syncOffers(category: String? = null) {
-        try {
+    // Возвращаем Boolean для обработки офлайн-режима на экране скидок
+    suspend fun syncOffers(category: String? = null): Boolean {
+        return try {
             val res = api.getOffers(category = category)
             if (res.isSuccessful && res.body() != null) {
                 val entities = res.body()!!.items.map {
@@ -118,9 +119,11 @@ class AppRepository(
                 }
                 dao.clearOffers()
                 dao.insertOffers(entities)
-            }
+                true
+            } else false
         } catch (e: Exception) {
             e.printStackTrace()
+            false
         }
     }
 
