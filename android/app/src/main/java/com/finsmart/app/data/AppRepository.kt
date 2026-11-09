@@ -9,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import com.finsmart.app.utils.DateUtils
 
 class AppRepository(
     private val context: Context,
@@ -80,8 +81,7 @@ class AppRepository(
         return try {
             val res = api.updateTransactionCategory(id, mapOf("category" to category))
             if (res.isSuccessful) {
-                // Если успешно, обновляем локальную базу
-                syncTransactions("2026-10") // В MVP хардкод месяца для простоты
+                syncTransactions(DateUtils.getCurrentMonth())
                 true
             } else false
         } catch (e: Exception) {

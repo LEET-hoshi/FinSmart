@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import com.finsmart.app.utils.DateUtils
 
 class TransactionsViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
@@ -46,7 +47,6 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
     fun syncData() {
         viewModelScope.launch {
             _isLoading.value = true
-            // Ищем за октябрь, так как импортировали октябрьские данные
             repository.syncTransactions("2026-10")
             _isLoading.value = false
         }
@@ -61,7 +61,6 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
             val result = repository.importCsv(file)
             if (result != null) {
                 _importResult.value = result
-                // После импорта обязательно обновляем данные из сети
                 repository.syncTransactions("2026-10")
             } else {
                 _error.value = "Ошибка импорта. Проверьте соединение."

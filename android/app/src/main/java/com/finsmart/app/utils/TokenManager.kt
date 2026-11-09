@@ -1,25 +1,31 @@
 package com.finsmart.app.utils
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.first
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
-val Context.dataStore by preferencesDataStore(name = "settings")
+class TokenManager(context: Context) {
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
 
-class TokenManager(private val context: Context) {
-    private val tokenKey = stringPreferencesKey("jwt_token")
+    private val sharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        "secret_shared_prefs",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
 
-    suspend fun saveToken(token: String) {
-        context.dataStore.edit { it[tokenKey] = token }
+    fun saveToken(token: String) {
+        sharedPreferences.edit().putString("jwt_token", token).apply()
     }
 
-    suspend fun getToken(): String? {
-        return context.dataStore.data.first()[tokenKey]
+    fun getToken(): String? {
+        return sharedPreferences.getString("jwt_token", null)
     }
 
-    suspend fun clearToken() {
-        context.dataStore.edit { it.remove(tokenKey) }
+    fun clearToken() {
+        sharedPreferences.edit().remove("jwt_token").apply()
     }
 }

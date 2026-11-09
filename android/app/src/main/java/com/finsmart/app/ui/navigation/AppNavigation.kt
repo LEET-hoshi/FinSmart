@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.finsmart.app.ui.screens.*
 import com.finsmart.app.ui.viewmodel.AuthViewModel
+
 sealed class Screen(val route: String, val label: String) {
     object Dashboard : Screen("dashboard", "Главная")
     object Transactions : Screen("transactions", "Операции")
@@ -37,22 +38,16 @@ val items = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FinSmartApp() {
-    // Управляем тем, показывать ли экран входа или основной экран
     val authViewModel: AuthViewModel = viewModel()
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
 
     if (isLoggedIn == null) {
-        // Пока проверяем токен - показываем загрузку
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
     } else if (isLoggedIn == false) {
-        // Не вошел - показываем экран входа
-        AuthScreen(onAuthSuccess = {
-            // После успешного входа обновляем состояние
-        })
+        AuthScreen(onAuthSuccess = {})
     } else {
-        // Вошел - показываем основной экран с вкладками
         AppMainScreen()
     }
 }
@@ -63,6 +58,9 @@ fun AppMainScreen() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    // Состояние для фильтрации скидок
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         bottomBar = {
@@ -80,6 +78,10 @@ fun AppMainScreen() {
                         label = { Text(screen.label) },
                         selected = currentRoute == screen.route,
                         onClick = {
+                            // СБРОС ФИЛЬТРА: если нажали на вкладку Скидки вручную, показываем все
+                            if (screen == Screen.Offers) {
+                                selectedCategory = null
+                            }
                             navController.navigate(screen.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
@@ -98,9 +100,39 @@ fun AppMainScreen() {
             startDestination = Screen.Dashboard.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Dashboard.route) { DashboardScreen() }
+            composable(Screen.Dashboard.route) {
+                DashboardScreen(
+                    onNavigateToOffers = { category ->
+                        selectedCategory = category
+                        navController.navigate(Screen.Offers.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onNavigateToTransactions = {
+                        navController.navigate(Screen.Transactions.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onNavigateToGoals = {
+                        navController.navigate(Screen.Goals.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
             composable(Screen.Transactions.route) { TransactionsScreen() }
-            composable(Screen.Offers.route) { OffersScreen() }
+
+            // Передаем выбранную категорию (если есть)
+            composable(Screen.Offers.route) {
+                OffersScreen(category = selectedCategory)
+            }
+
             composable(Screen.Goals.route) { GoalsScreen() }
         }
     }

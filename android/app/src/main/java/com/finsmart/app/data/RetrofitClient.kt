@@ -2,8 +2,11 @@ package com.finsmart.app.data
 
 import android.content.Context
 import com.finsmart.app.utils.TokenManager
-import kotlinx.coroutines.runBlocking
+import okhttp3.Authenticator
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -24,15 +27,24 @@ object RetrofitClient {
         val client = OkHttpClient.Builder()
             .addInterceptor(logging)
             .addInterceptor { chain ->
-                // Блокирующий вызов, чтобы гарантированно получить токен
-                val token = runBlocking { tokenManager?.getToken() }
-                android.util.Log.d("FIN_TOKEN", "Полученный токен: $token")
+                val token = tokenManager?.getToken()
                 val request = chain.request().newBuilder()
                 if (token != null) {
                     request.addHeader("Authorization", "Bearer $token")
                 }
                 chain.proceed(request.build())
             }
+            // Добавляем обработчик 401
+            .authenticator(object : Authenticator {
+                override fun authenticate(route: Route?, response: Response): Request? {
+                    // Если это уже повторная попытка - не зацикливаемся
+                    if (response.request.header("Authorization") != null && responseCount(response) >= 2) {
+                        return null
+                    }
+                    tokenManager?.clearToken()
+                    return null
+                }
+            })
             .build()
 
         return Retrofit.Builder()
@@ -41,5 +53,16 @@ object RetrofitClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
+    }
+
+    // Вспомогательная функция для подсчета попыток
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var priorResponse = response.priorResponse
+        while (priorResponse != null) {
+            count++
+            priorResponse = priorResponse.priorResponse
+        }
+        return count
     }
 }

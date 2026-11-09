@@ -1,5 +1,6 @@
 package com.finsmart.app.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,12 +14,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.finsmart.app.data.model.Recommendation
 import com.finsmart.app.ui.viewmodel.DashboardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
+fun DashboardScreen(
+    onNavigateToOffers: (String?) -> Unit,
+    onNavigateToTransactions: () -> Unit,
+    onNavigateToGoals: () -> Unit,
+    viewModel: DashboardViewModel = viewModel()
+) {
     val analytics by viewModel.analytics.collectAsState()
     val recommendation by viewModel.recommendation.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -80,13 +85,26 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel()) {
 
         if (recommendation != null) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        // ПО ТЗ P0: всегда переходим к скидкам выбранной категории
+                        onNavigateToOffers(recommendation!!.category)
+                    },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(recommendation!!.title, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(recommendation!!.message)
+                    if (recommendation!!.actionLabel != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = recommendation!!.actionLabel!!,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         } else {

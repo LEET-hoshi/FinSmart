@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -17,15 +15,22 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.finsmart.app.data.local.OfferEntity
 import com.finsmart.app.ui.viewmodel.OffersViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OffersScreen(viewModel: OffersViewModel = viewModel()) {
+fun OffersScreen(
+    category: String? = null,
+    viewModel: OffersViewModel = viewModel()
+) {
     val context = LocalContext.current
     val offers by viewModel.offers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    // Загружаем скидки с фильтром при открытии
+    LaunchedEffect(category) {
+        viewModel.syncData(category)
+    }
 
     if (isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -36,7 +41,7 @@ fun OffersScreen(viewModel: OffersViewModel = viewModel()) {
 
     if (offers.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Скидок пока нет")
+            Text(if (category != null) "Скидок в категории $category нет" else "Скидок пока нет")
         }
         return
     }
@@ -47,7 +52,7 @@ fun OffersScreen(viewModel: OffersViewModel = viewModel()) {
     ) {
         item {
             Text(
-                text = "Скидки Магнита",
+                text = if (category != null) "Скидки: $category" else "Скидки Магнита",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -63,9 +68,7 @@ fun OffersScreen(viewModel: OffersViewModel = viewModel()) {
                     Text(text = offer.title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = "Категория: ${offer.category}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (offer.regularPrice != null) {
                             Text(
@@ -87,14 +90,11 @@ fun OffersScreen(viewModel: OffersViewModel = viewModel()) {
                             Text("Цена по акции неизвестна", fontSize = 16.sp)
                         }
                     }
-
                     if (offer.conditions != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = offer.conditions, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-
                     Spacer(modifier = Modifier.height(12.dp))
-
                     Button(
                         onClick = {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(offer.url))

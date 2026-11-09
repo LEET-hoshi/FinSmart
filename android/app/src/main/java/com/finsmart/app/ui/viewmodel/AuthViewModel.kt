@@ -18,7 +18,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val tokenManager = TokenManager(context)
     private val repository = AppRepository(context, api, db, tokenManager)
 
-    private val _isLoggedIn = MutableStateFlow<Boolean?>(null) // null = проверка
+    private val _isLoggedIn = MutableStateFlow<Boolean?>(null)
     val isLoggedIn: StateFlow<Boolean?> = _isLoggedIn
 
     private val _isLoading = MutableStateFlow(false)
@@ -32,9 +32,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun checkAuth() {
-        viewModelScope.launch {
-            _isLoggedIn.value = repository.isLoggedIn()
-        }
+        _isLoggedIn.value = tokenManager.getToken() != null
     }
 
     fun login(email: String, pass: String) {

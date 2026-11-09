@@ -26,20 +26,17 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
     val isLoading: StateFlow<Boolean> = _isLoading
 
     init {
-        // Слушаем изменения из базы (кэш)
         viewModelScope.launch {
             repository.getOffersFlow().collect { list ->
                 _offers.value = list
             }
         }
-        // Загружаем из сети
-        syncData()
     }
 
-    private fun syncData() {
+    fun syncData(category: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.syncOffers() // Загружаем все скидки
+            repository.syncOffers(category)
             _isLoading.value = false
         }
     }
