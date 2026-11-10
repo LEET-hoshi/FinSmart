@@ -5,6 +5,7 @@ local.properties
 # Gradle / сборка
 .gradle/
 build/
+node_modules/
 !gradle/wrapper/gradle-wrapper.jar
 
 # IDE

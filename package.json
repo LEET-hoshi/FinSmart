@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "test": "npm run test:offers",
+    "test:offers": "node --test scripts/update-magnit-offers.test.mjs"
+  },
+  "dependencies": {
+    "api-anything": "0.3.2"
+  }
+}
