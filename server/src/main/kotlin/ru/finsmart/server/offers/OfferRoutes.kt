@@ -88,7 +88,10 @@ fun Route.offerRoutes(dataSource: DataSource) {
                 // Предложение без региона действует везде.
                 if (region != null) where.append(" AND (o.region = ? OR o.region IS NULL)")
                 val items = c.prepareStatement(
-                    "$OFFER_SELECT WHERE $where ORDER BY (o.regular_price - o.sale_price) DESC NULLS LAST, o.valid_to NULLS LAST, o.title",
+                    "$OFFER_SELECT WHERE $where " +
+                        "ORDER BY CASE WHEN o.regular_price IS NOT NULL AND o.sale_price IS NOT NULL " +
+                        "AND o.sale_price < o.regular_price THEN o.regular_price - o.sale_price END DESC NULLS LAST, " +
+                        "o.valid_to NULLS LAST, o.title",
                 ).use {
                     var i = 1
                     it.setDate(i++, today)
