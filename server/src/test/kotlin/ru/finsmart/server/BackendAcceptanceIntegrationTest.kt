@@ -219,6 +219,44 @@ class BackendAcceptanceIntegrationTest {
     }
 
     @Test
+    fun recommendation_route_returns_offers_action_for_the_fastest_growing_category() = apiTest {
+        val user = client.register()
+        client.importCsv(user, "valid.csv")
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+        assertEquals("open_offers", recommendation.str("actionType"))
+        assertTrue(recommendation.str("category") in setOf("groceries", "cafes", "transport", "health", "home", "entertainment", "other"))
+        assertEquals("rules", recommendation.str("source"))
+    }
+
+    @Test
+    fun recommendation_route_is_neutral_without_a_previous_period() = apiTest {
+        val user = client.register()
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+        assertEquals("none", recommendation.str("actionType"))
+        assertEquals("null", recommendation.getValue("category").toString())
+    }
+
+    @Test
+    fun recommendation_route_passes_active_goal_progress_to_the_provider() = apiTest {
+        val user = client.register()
+        client.importCsv(user, "valid.csv")
+        val goal = client.post("/goals") {
+            header(HttpHeaders.Authorization, "Bearer ${user.token}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Отпуск","targetAmount":"1000","currentAmount":"500"}""")
+        }
+        assertEquals(HttpStatusCode.Created, goal.status, goal.bodyAsText())
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+        assertTrue(recommendation.str("message").contains("50.0%"))
+    }
+
+    @Test
     fun expired_offer_is_not_returned() = apiTest {
         val user = client.register()
         val today = LocalDate.now(BUSINESS_ZONE)

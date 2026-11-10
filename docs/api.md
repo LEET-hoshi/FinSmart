@@ -320,15 +320,15 @@ GET /ai/recommendation?month=2026-10  → 200
 ```json
 {
   "title": "Расходы выросли",
-  "message": "Проверьте расходы в категории home и сравните их с предыдущим месяцем.",
+  "message": "Расходы в категории «Дом» выросли сильнее всего. Посмотрите скидки в этой категории.",
   "category": "home",
-  "actionType": "open_transactions",
-  "actionLabel": "Посмотреть расходы",
+  "actionType": "open_offers",
+  "actionLabel": "Посмотреть скидки",
   "source": "rules"
 }
 ```
 
-`month` обязателен. `actionType`: `open_offers`, `open_goals`, `open_transactions` или `none`; при `open_offers` экран скидок открывается с фильтром `category`. Для месяца без операций приходит нейтральная рекомендация с `"category": null`.
+`month` обязателен. `category` остаётся кодом для фильтра API; в `message` сервер подставляет русское название. `actionType`: `open_offers`, `open_goals`, `open_transactions` или `none`; при `open_offers` экран скидок открывается с фильтром `category`. Для месяца без прошлого периода приходит нейтральная рекомендация с `"category": null`.
 
 ## Синхронизация офлайн-изменений
 

@@ -31,7 +31,7 @@
 ## Что осталось сделать
 
 1. **`POST /sync/push`** (ADR 0002): применять изменения целей и ручных категорий идемпотентно по `client_change_id`, писать в `sync_changes` (таблица и ограничения есть в V3). `pull`/cursor отложены.
-2. **`GET /ai/recommendation`** вместе с T3: `AiRecommendationProvider`, `RuleBasedProvider` (обязателен), `LlmProvider` с таймаутом и валидацией JSON. Числа в текст подставляет backend из агрегата. Эндпоинта пока нет.
+2. **ИИ-рекомендации (T3)**: `GET /ai/recommendation` и обязательный `RuleBasedProvider` реализованы. Опциональный `LlmProvider` включается feature flag, имеет timeout, строгую валидацию JSON и fallback на rules; контракт и безопасный набор данных описаны в `docs/ai-agent.md`.
 3. **Интеграционные тесты с БД.** Сейчас интеграция проверяется только `scripts/smoke.sh` на запущенном стенде, CI гоняет юнит-тесты. Стоит добавить Testcontainers и перенести сценарии.
 4. **Android** — модуль пуст.
 

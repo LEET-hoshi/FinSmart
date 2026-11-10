@@ -43,6 +43,9 @@ import ru.finsmart.server.transactions.transactionRoutes
 import java.nio.file.Path
 import javax.sql.DataSource
 import ru.finsmart.server.recommendations.RecommendationService
+import ru.finsmart.server.recommendations.GoalProgressService
+import ru.finsmart.server.recommendations.FallbackRecommendationProvider
+import ru.finsmart.server.recommendations.LlmProvider
 import ru.finsmart.server.recommendations.RuleBasedProvider
 import ru.finsmart.server.recommendations.recommendationRoutes
 import ru.finsmart.server.sync.SyncRepository
@@ -66,10 +69,17 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
     val transactionService = TransactionService(TransactionRepository(dataSource))
     val analyticsRepository = AnalyticsRepository(dataSource)
     val analyticsService = AnalyticsService(analyticsRepository)
+    val ruleBasedProvider = RuleBasedProvider()
+    val recommendationProvider = if (config.llm.enabled) {
+        FallbackRecommendationProvider(LlmProvider(config.llm), ruleBasedProvider)
+    } else {
+        ruleBasedProvider
+    }
     val recommendationService = RecommendationService(
-    analyticsService,
-    RuleBasedProvider()
-)
+        analyticsService,
+        GoalProgressService(dataSource, analyticsService),
+        recommendationProvider,
+    )
     val categoryRepository = CategoryRepository(dataSource)
     val syncService = SyncService(SyncRepository(dataSource))
 
