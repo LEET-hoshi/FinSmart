@@ -8,6 +8,7 @@ data class AppConfig(
     val jwt: JwtConfig,
     val offersFile: String? = null,
     val rateLimit: RateLimitConfig = RateLimitConfig(),
+    val llm: LlmConfig = LlmConfig(),
 ) {
     companion object {
         private const val MIN_SECRET_LENGTH = 32
@@ -32,11 +33,24 @@ data class AppConfig(
                 authPerMinute = env.positiveInt("RATE_LIMIT_AUTH_PER_MINUTE") ?: RateLimitConfig.DEFAULT_AUTH_PER_MINUTE,
                 importPerMinute = env.positiveInt("RATE_LIMIT_IMPORT_PER_MINUTE") ?: RateLimitConfig.DEFAULT_IMPORT_PER_MINUTE,
             ),
+            llm = LlmConfig(
+                enabled = env["LLM_ENABLED"].equals("true", ignoreCase = true),
+                endpoint = env["LLM_ENDPOINT"]?.takeIf { it.isNotBlank() },
+                apiKey = env["LLM_API_KEY"]?.takeIf { it.isNotBlank() },
+                timeout = Duration.ofSeconds(env["LLM_TIMEOUT_SECONDS"]?.toLongOrNull()?.coerceIn(1, 30) ?: 5),
+            ),
         )
 
         private fun Map<String, String>.positiveInt(key: String): Int? = this[key]?.toIntOrNull()?.takeIf { it > 0 }
     }
 }
+
+data class LlmConfig(
+    val enabled: Boolean = false,
+    val endpoint: String? = null,
+    val apiKey: String? = null,
+    val timeout: Duration = Duration.ofSeconds(5),
+)
 
 data class RateLimitConfig(
     val authPerMinute: Int = DEFAULT_AUTH_PER_MINUTE,
