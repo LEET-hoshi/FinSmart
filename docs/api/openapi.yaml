@@ -32,6 +32,7 @@ tags:
   - name: goals
   - name: offers
   - name: ai
+  - name: sync
   - name: system
 
 paths:
@@ -562,6 +563,76 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /sync/push:
+    post:
+      tags: [sync]
+      summary: Отправка офлайн-изменений клиента
+      description: |
+        Пакет изменений из локальной очереди Android (ADR 0002). Поддерживаются изменения целей (`goal`) и ручная смена категории операции (`transaction_category`).
+        Каждое изменение применяется отдельно: ошибка в одном не отменяет остальные. Результат возвращается по каждому изменению в том же порядке.
+        Идемпотентность — по `clientChangeId` в рамках пользователя: повторная отправка возвращает `duplicate` и ничего не меняет. Клиент удаляет изменение из очереди при `applied` и `duplicate`; при `rejected` повтор не поможет.
+        Конфликты в MVP: побеждает последнее принятое изменение. `delete` пока отклоняется (`unsupported_operation`). `GET /sync/pull` отложен.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncPushRequest"
+            example:
+              changes:
+                - clientChangeId: 2b7c6a1e-3f4d-4e5a-9b8c-7d6e5f4a3b21
+                  entityType: goal
+                  entityId: 8f1e2d3c-4b5a-4968-8776-5a4b3c2d1e0f
+                  operation: upsert
+                  payload:
+                    title: Отпуск
+                    type: saving
+                    targetAmount: "50000"
+                - clientChangeId: 5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a
+                  entityType: transaction_category
+                  entityId: 0c9a8e7d-1b2c-4d3e-8f9a-0b1c2d3e4f5a
+                  operation: upsert
+                  payload:
+                    category: cafes
+      responses:
+        "200":
+          description: Результат по каждому изменению
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncPushResponse"
+              example:
+                results:
+                  - clientChangeId: 2b7c6a1e-3f4d-4e5a-9b8c-7d6e5f4a3b21
+                    status: applied
+                    entityType: goal
+                    entityId: 8f1e2d3c-4b5a-4968-8776-5a4b3c2d1e0f
+                    version: 1
+                    error: null
+                  - clientChangeId: 5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a
+                    status: rejected
+                    entityType: transaction_category
+                    entityId: 0c9a8e7d-1b2c-4d3e-8f9a-0b1c2d3e4f5a
+                    version: null
+                    error:
+                      code: not_found
+                      message: Объект не найден
+                      details: null
+                cursor: 42
+        "400":
+          description: Пакет пустой, больше 100 изменений или с некорректной структурой; ключи `details` — вида `changes[0].entityId`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: validation_error
+                message: Некорректные данные
+                details:
+                  changes[0].entityId: Ожидается UUID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1034,3 +1105,78 @@ components:
         source:
           type: string
           enum: [llm, rules]
+
+    SyncPushRequest:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/SyncChange"
+
+    SyncChange:
+      type: object
+      required: [clientChangeId, entityType, entityId, operation]
+      properties:
+        clientChangeId:
+          type: string
+          format: uuid
+          description: UUID изменения, который клиент создаёт один раз и повторяет при каждой отправке
+        entityType:
+          type: string
+          enum: [goal, transaction_category]
+        entityId:
+          type: string
+          format: uuid
+          description: Для `goal` — id цели (новую цель клиент создаёт со своим UUID). Для `transaction_category` — id операции.
+        operation:
+          type: string
+          enum: [upsert, delete]
+          description: '`delete` в MVP отклоняется'
+        payload:
+          type: object
+          description: |
+            Обязателен для `upsert`.
+            `goal`: если цели нет — поля `GoalCreate`, если есть — поля `GoalUpdate` (те же правила, что у `POST`/`PATCH /goals`).
+            `transaction_category`: `{"category": CategoryCode}`; категория становится ручной (`categoryManual: true`).
+
+    SyncChangeResult:
+      type: object
+      required: [clientChangeId, status, entityType, entityId, version, error]
+      properties:
+        clientChangeId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [applied, duplicate, rejected]
+          description: '`applied` — применено; `duplicate` — этот `clientChangeId` уже принят ранее; `rejected` — отклонено, причина в `error`'
+        entityType:
+          type: string
+          enum: [goal, transaction_category]
+        entityId:
+          type: string
+          format: uuid
+        version:
+          type: [integer, 'null']
+          description: Серверная версия сущности после изменения (растёт с каждым принятым изменением); null при `rejected`
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/Error"
+            - type: 'null'
+          description: '`not_found` — сущность не найдена или принадлежит другому пользователю; `validation_error` — некорректный `payload`; `unsupported_operation` — `delete`'
+
+    SyncPushResponse:
+      type: object
+      required: [results, cursor]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SyncChangeResult"
+        cursor:
+          type: [integer, 'null']
+          description: Номер последнего принятого изменения пользователя (для будущего `GET /sync/pull`); null — изменений ещё не было

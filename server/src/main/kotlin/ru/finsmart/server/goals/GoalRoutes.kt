@@ -27,6 +27,7 @@ import ru.finsmart.server.common.validationError
 import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.Date
+import java.sql.Types
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -52,7 +53,7 @@ data class GoalDto(
     val updatedAt: String,
 )
 
-private class GoalRow(
+internal class GoalRow(
     val id: UUID,
     val title: String,
     val type: String,
@@ -141,34 +142,8 @@ fun Route.goalRoutes(dataSource: DataSource, analytics: AnalyticsRepository) {
         post("/goals") {
             val userId = call.userId()
             val body = call.receive<JsonObject>()
-            val title = validateTitle(body.text("title"))
-            val type = body.text("type") ?: TYPE_SAVING
-            if (type != TYPE_SAVING && type != TYPE_LIMIT) throw validationError("type", "saving или spending_limit")
-            val target = parseMoneyInput(body.text("targetAmount") ?: throw validationError("targetAmount", "Обязательное поле"), "targetAmount")
-            val current = if (type == TYPE_LIMIT) BigDecimal.ZERO
-            else body.text("currentAmount")?.let { parseMoneyInput(it, "currentAmount") } ?: BigDecimal.ZERO
-            checkMoney(target, current)
-            val deadline = parseDeadline(body.text("deadline"))
-            val category = body.text("category")
-            if (type == TYPE_LIMIT && category == null) throw validationError("category", "Для лимита категория обязательна")
-
             val spent = analytics.spentThisMonth(userId)
-            val created = dataSource.tx { c ->
-                if (category != null) c.requireCategory(category, "category")
-                c.prepareStatement(
-                    "INSERT INTO goals (user_id, title, type, target_amount, current_amount, deadline, category_code) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING $GOAL_COLUMNS",
-                ).use {
-                    it.setObject(1, userId)
-                    it.setString(2, title)
-                    it.setString(3, type)
-                    it.setBigDecimal(4, target)
-                    it.setBigDecimal(5, current)
-                    it.setDate(6, deadline?.let(Date::valueOf))
-                    it.setString(7, category)
-                    it.executeQuery().use { rs -> rs.next(); rs.toGoalRow().toDto(spent) }
-                }
-            }
+            val created = dataSource.tx { c -> c.insertGoal(userId, body).toDto(spent) }
             call.respond(HttpStatusCode.Created, created)
         }
 
@@ -180,47 +155,89 @@ fun Route.goalRoutes(dataSource: DataSource, analytics: AnalyticsRepository) {
 
             val spent = analytics.spentThisMonth(userId)
             val updated = dataSource.tx { c ->
-                val existing = c.prepareStatement(
-                    "SELECT $GOAL_COLUMNS FROM goals WHERE id = ? AND user_id = ? AND deleted_at IS NULL FOR UPDATE",
-                ).use {
-                    it.setObject(1, id)
-                    it.setObject(2, userId)
-                    it.executeQuery().use { rs -> if (rs.next()) rs.toGoalRow() else null }
-                } ?: throw notFound()
-
-                val title = if ("title" in body) validateTitle(body.text("title")) else existing.title
-                val target = if ("targetAmount" in body) {
-                    parseMoneyInput(body.text("targetAmount") ?: throw validationError("targetAmount", "Не может быть null"), "targetAmount")
-                } else existing.target
-                val current = when {
-                    existing.type == TYPE_LIMIT -> BigDecimal.ZERO
-                    "currentAmount" in body ->
-                        parseMoneyInput(body.text("currentAmount") ?: throw validationError("currentAmount", "Не может быть null"), "currentAmount")
-                    else -> existing.current
-                }
-                checkMoney(target, current)
-                val deadline = if ("deadline" in body) parseDeadline(body.text("deadline")) else existing.deadline
-                val category = if ("category" in body) body.text("category") else existing.category
-                if (existing.type == TYPE_LIMIT && category == null) {
-                    throw validationError("category", "Для лимита категория обязательна")
-                }
-                if (category != null) c.requireCategory(category, "category")
-
-                c.prepareStatement(
-                    "UPDATE goals SET title = ?, target_amount = ?, current_amount = ?, deadline = ?, category_code = ?, " +
-                        "updated_at = now() WHERE id = ? AND user_id = ? RETURNING $GOAL_COLUMNS",
-                ).use {
-                    it.setString(1, title)
-                    it.setBigDecimal(2, target)
-                    it.setBigDecimal(3, current)
-                    it.setDate(4, deadline?.let(Date::valueOf))
-                    it.setString(5, category)
-                    it.setObject(6, id)
-                    it.setObject(7, userId)
-                    it.executeQuery().use { rs -> rs.next(); rs.toGoalRow().toDto(spent) }
-                }
+                val existing = c.lockGoal(userId, id) ?: throw notFound()
+                c.updateGoal(userId, existing, body).toDto(spent)
             }
             call.respond(updated)
         }
+    }
+}
+
+internal fun Connection.goalIdTaken(id: UUID): Boolean =
+    prepareStatement("SELECT 1 FROM goals WHERE id = ?").use {
+        it.setObject(1, id)
+        it.executeQuery().use { rs -> rs.next() }
+    }
+
+internal fun Connection.lockGoal(userId: UUID, id: UUID): GoalRow? =
+    prepareStatement(
+        "SELECT $GOAL_COLUMNS FROM goals WHERE id = ? AND user_id = ? AND deleted_at IS NULL FOR UPDATE",
+    ).use {
+        it.setObject(1, id)
+        it.setObject(2, userId)
+        it.executeQuery().use { rs -> if (rs.next()) rs.toGoalRow() else null }
+    }
+
+internal fun Connection.insertGoal(userId: UUID, body: JsonObject, id: UUID? = null): GoalRow {
+    val title = validateTitle(body.text("title"))
+    val type = body.text("type") ?: TYPE_SAVING
+    if (type != TYPE_SAVING && type != TYPE_LIMIT) throw validationError("type", "saving или spending_limit")
+    val target = parseMoneyInput(body.text("targetAmount") ?: throw validationError("targetAmount", "Обязательное поле"), "targetAmount")
+    val current = if (type == TYPE_LIMIT) BigDecimal.ZERO
+    else body.text("currentAmount")?.let { parseMoneyInput(it, "currentAmount") } ?: BigDecimal.ZERO
+    checkMoney(target, current)
+    val deadline = parseDeadline(body.text("deadline"))
+    val category = body.text("category")
+    if (type == TYPE_LIMIT && category == null) throw validationError("category", "Для лимита категория обязательна")
+    if (category != null) requireCategory(category, "category")
+
+    return prepareStatement(
+        "INSERT INTO goals (id, user_id, title, type, target_amount, current_amount, deadline, category_code) " +
+            "VALUES (COALESCE(?::uuid, gen_random_uuid()), ?, ?, ?, ?, ?, ?, ?) RETURNING $GOAL_COLUMNS",
+    ).use {
+        if (id != null) it.setObject(1, id) else it.setNull(1, Types.OTHER)
+        it.setObject(2, userId)
+        it.setString(3, title)
+        it.setString(4, type)
+        it.setBigDecimal(5, target)
+        it.setBigDecimal(6, current)
+        it.setDate(7, deadline?.let(Date::valueOf))
+        it.setString(8, category)
+        it.executeQuery().use { rs -> rs.next(); rs.toGoalRow() }
+    }
+}
+
+internal fun Connection.updateGoal(userId: UUID, existing: GoalRow, body: JsonObject): GoalRow {
+    if (body.isEmpty()) throw validationError("body", "Передайте хотя бы одно поле")
+    val title = if ("title" in body) validateTitle(body.text("title")) else existing.title
+    val target = if ("targetAmount" in body) {
+        parseMoneyInput(body.text("targetAmount") ?: throw validationError("targetAmount", "Не может быть null"), "targetAmount")
+    } else existing.target
+    val current = when {
+        existing.type == TYPE_LIMIT -> BigDecimal.ZERO
+        "currentAmount" in body ->
+            parseMoneyInput(body.text("currentAmount") ?: throw validationError("currentAmount", "Не может быть null"), "currentAmount")
+        else -> existing.current
+    }
+    checkMoney(target, current)
+    val deadline = if ("deadline" in body) parseDeadline(body.text("deadline")) else existing.deadline
+    val category = if ("category" in body) body.text("category") else existing.category
+    if (existing.type == TYPE_LIMIT && category == null) {
+        throw validationError("category", "Для лимита категория обязательна")
+    }
+    if (category != null) requireCategory(category, "category")
+
+    return prepareStatement(
+        "UPDATE goals SET title = ?, target_amount = ?, current_amount = ?, deadline = ?, category_code = ?, " +
+            "updated_at = now() WHERE id = ? AND user_id = ? RETURNING $GOAL_COLUMNS",
+    ).use {
+        it.setString(1, title)
+        it.setBigDecimal(2, target)
+        it.setBigDecimal(3, current)
+        it.setDate(4, deadline?.let(Date::valueOf))
+        it.setString(5, category)
+        it.setObject(6, existing.id)
+        it.setObject(7, userId)
+        it.executeQuery().use { rs -> rs.next(); rs.toGoalRow() }
     }
 }
