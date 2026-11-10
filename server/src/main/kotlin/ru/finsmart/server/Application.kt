@@ -32,6 +32,7 @@ import ru.finsmart.server.common.ApiError
 import ru.finsmart.server.common.ApiException
 import ru.finsmart.server.common.AppConfig
 import ru.finsmart.server.common.Database
+import ru.finsmart.server.common.configureRateLimits
 import ru.finsmart.server.goals.goalRoutes
 import ru.finsmart.server.health.healthRoutes
 import ru.finsmart.server.offers.OfferCatalogLoader
@@ -89,6 +90,12 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
                 ApiError(code = "validation_error", message = "Некорректное тело запроса"),
             )
         }
+        status(HttpStatusCode.TooManyRequests) { call, status ->
+            call.respond(
+                status,
+                ApiError(code = "too_many_requests", message = "Слишком много запросов, попробуйте позже"),
+            )
+        }
         status(HttpStatusCode.NotFound) { call, _ ->
             call.respond(
                 HttpStatusCode.NotFound,
@@ -122,6 +129,7 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
         }
     }
     configureJwtAuth(tokens)
+    configureRateLimits(config.rateLimit)
 
     routing {
         healthRoutes(dataSource)
