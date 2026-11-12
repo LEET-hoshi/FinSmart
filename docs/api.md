@@ -4,7 +4,7 @@
 
 ## Подключение
 
-Backend поднимается командой из README: `docker compose up --build`. Проверка: `GET /health` → `{"status":"ok","database":"ok"}`.
+Backend поднимается командой из README: `docker compose up --build`. Проверка: `GET /health` → `{"status":"ok","database":"ok","recommendations":"rules"}`. Поле `recommendations` показывает режим рекомендаций на сервере: `rules` или `llm`.
 
 | Где запущено приложение | `BASE_URL` |
 |---|---|
