@@ -24,6 +24,12 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-finsmart}
       JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
       OFFERS_FILE: /app/fixtures/offers/offers.json
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      RATE_LIMIT_IMPORT_PER_MINUTE: ${RATE_LIMIT_IMPORT_PER_MINUTE:-10}
+      LLM_ENABLED: ${LLM_ENABLED:-false}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-5}
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
