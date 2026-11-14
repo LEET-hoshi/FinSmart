@@ -2,16 +2,26 @@
   "ok": true,
   "data": [
     {
-      "title": "Кофе натуральный",
-      "url": "https://magnit.ru/promo-product/2189944-kofe?shopCode=992301",
-      "salePrice": "499,99 ₽",
-      "regularPrice": "1 338,99 ₽",
-      "discount": "-63%"
+      "id": "2190451",
+      "name": "Сыр Ламбер 50%, 100 г",
+      "slug": "lamber-syr-50-100-g",
+      "price": 9999,
+      "oldPrice": 15999,
+      "startDate": "2026-11-11",
+      "endDate": "2026-11-17",
+      "description": "Цена на товар действует только при предъявлении карты Магнит Плюс.",
+      "discountLabel": "-37%",
+      "type": "1"
     },
     {
-      "title": "Картофель",
-      "url": "https://magnit.ru/promo-product/111-kartofel?shopCode=992301",
-      "salePrice": "59,9 ₽"
+      "id": "2190450",
+      "name": "Пельмени Горячая штучка Бульмени со сливочным маслом, 400 г",
+      "slug": "pel-meni-goriachaia-shtuchka-bul-meni-so-slivochnym-maslom-400-g",
+      "price": 13999,
+      "startDate": "2026-11-11",
+      "endDate": "2026-11-17",
+      "description": "Цена за единицу товара при единовременной покупке двух акционных товаров. Требуется карта Магнит Плюс.",
+      "type": "1"
     }
   ]
 }
