@@ -6,44 +6,41 @@
       "name": "listOffers",
       "request": {
         "method": "GET",
-        "url": "https://magnit.ru/promo-catalog",
+        "url": "https://magnit.ru/webgate/v1/promotions/type?storeCode=667052&type=1&limit=30&offset=0&adult=true",
         "headers": {
-          "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-          "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-          "priority": "u=0, i",
-          "sec-ch-ua": "\"Chromium\";v=\"154\", \"Google Chrome\";v=\"154\", \"Not A(Brand\";v=\"99\"",
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": "\"macOS\"",
-          "sec-fetch-dest": "document",
-          "sec-fetch-mode": "navigate",
-          "sec-fetch-site": "none",
-          "sec-fetch-user": "?1",
-          "upgrade-insecure-requests": "1",
-          "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+          "accept": "application/json",
+          "x-client-name": "magnit",
+          "x-device-platform": "Web",
+          "x-app-version": "2026.11.11-17.40",
+          "user-agent": "FinSmart-Educational-Offers-Adapter/1.0"
         }
       },
       "slots": [],
       "volatile": [],
       "trigger": {
-        "url": "https://magnit.ru/promo-catalog"
+        "url": "https://magnit.ru/promo-catalog?shopCode=667052&shopType=1"
       },
       "match": {
         "method": "GET",
-        "path": "/promo-catalog"
+        "host": "magnit.ru",
+        "path": "/webgate/v1/promotions/type"
       },
       "response": {
-        "format": "html",
-        "contentType": "text/html;charset=utf-8",
-        "html": {
-          "items": ".unit-catalog-product-preview",
-          "fields": {
-            "title": ".unit-catalog-product-preview-title",
-            "url": "a@href",
-            "salePrice": ".unit-catalog-product-preview-prices__regular",
-            "regularPrice": ".unit-catalog-product-preview-prices__sale",
-            "discount": ".unit-catalog-product-preview__discount"
-          }
-        }
+        "format": "json",
+        "contentType": "application/json",
+        "extract": "data",
+        "pick": [
+          "id",
+          "name",
+          "slug",
+          "price",
+          "oldPrice",
+          "startDate",
+          "endDate",
+          "description",
+          "discountLabel",
+          "type"
+        ]
       },
       "params": [],
       "readOnly": true,

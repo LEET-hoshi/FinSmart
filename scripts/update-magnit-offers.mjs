@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import {
     existsSync,
     mkdirSync,
+    readFileSync,
     renameSync,
     statSync,
     writeFileSync,
@@ -31,28 +32,21 @@ const outputFile = join(
 
 const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
 const forceUpdate = process.argv.includes("--force");
+export const MAGNIT_STORE = Object.freeze({
+    code: "667052",
+    region: "Екатеринбург",
+    address: "Екатеринбург, ул. Первомайская, 76",
+});
 
 /*
- * Преобразует цену вида "1 338,99 ₽" в строку "1338.99".
- * Если цены нет или она записана неправильно, возвращает null.
+ * JSON сайта передаёт цену в копейках: 9999 → "99.99".
+ * Не извлекаем цены из рекламных описаний и не подменяем отсутствие нулём.
  */
 export function normalizePrice(value) {
-    if (value === undefined || value === null) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
         return null;
     }
-
-    const cleanedValue = String(value).trim().replace(/[\s\u00a0\u202f]/g, "").replace(/₽$/, "").replace(",", ".");
-    if (!/^\d+(?:\.\d{1,2})?$/.test(cleanedValue)) {
-        return null;
-    }
-
-    const number = Number(cleanedValue);
-
-    if (!Number.isFinite(number) || number < 0) {
-        return null;
-    }
-
-    return number.toFixed(2);
+    return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`;
 }
 
 /*
@@ -62,6 +56,17 @@ export function normalizePrice(value) {
 export function getSourceId(url) {
     const match = String(url).match(/^https:\/\/magnit\.ru\/promo-product\/(\d+)-[^/]+/);
     return match ? `magnit-${match[1]}` : null;
+}
+
+// Код проверен через официальный выбор магазина. Другие магазины не смешиваем.
+export function getRegion(url) {
+    try {
+        const source = new URL(url);
+        return source.origin === "https://magnit.ru" && source.searchParams.get("shopCode") === MAGNIT_STORE.code
+            ? MAGNIT_STORE.region : null;
+    } catch {
+        return null;
+    }
 }
 
 /*
@@ -101,19 +106,42 @@ export function getCategory(title) {
 /*
  * Проверяет, обновлялся ли каталог меньше суток назад.
  */
-function catalogIsFresh() {
-    if (!existsSync(outputFile)) {
+function hasCurrentPrices(offers) {
+    return Array.isArray(offers) && offers.length > 0 && offers.every((offer) =>
+        offer && typeof offer.salePrice === "string" && /^\d+\.\d{2}$/.test(offer.salePrice)
+        && Number(offer.salePrice) > 0 && offer.region === MAGNIT_STORE.region
+        && getRegion(offer.url) === MAGNIT_STORE.region);
+}
+
+export function catalogIsFresh(file = outputFile) {
+    if (!existsSync(file)) {
         return false;
     }
 
-    const fileAge = Date.now() - statSync(outputFile).mtimeMs;
-    return fileAge < oneDayInMilliseconds;
+    const fileAge = Date.now() - statSync(file).mtimeMs;
+    if (fileAge >= oneDayInMilliseconds) {
+        return false;
+    }
+
+    try {
+        return hasCurrentPrices(JSON.parse(readFileSync(file, "utf8")));
+    } catch {
+        return false;
+    }
 }
 
 /*
  * Получает данные с помощью сохранённого правила API Anything.
  */
 export function loadMagnitOffers({ cliPath = resolve(projectDirectory, "node_modules", "api-anything", "dist", "cli.js"), run = spawnSync, timeoutMs = 30_000 } = {}) {
+    // Не позволяем случайно поменять правило и подписать цены другого города Екатеринбургом.
+    const spec = JSON.parse(readFileSync(join(apiAnythingDirectory, "sites", "magnit-ru.json"), "utf8"));
+    const request = spec.operations.find((operation) => operation.name === "listOffers")?.request;
+    const source = new URL(request?.url);
+    if (source.origin !== "https://magnit.ru" || source.pathname !== "/webgate/v1/promotions/type"
+        || source.searchParams.get("storeCode") !== MAGNIT_STORE.code || source.searchParams.get("type") !== "1") {
+        throw new Error("Правило источника не соответствует выбранному магазину Екатеринбурга");
+    }
     console.log("Этап: получение данных");
     const result = run(
         process.execPath,
@@ -176,30 +204,43 @@ export function convertOffers(sourceOffers) {
     const uniqueOffers = new Map();
 
     for (const sourceOffer of sourceOffers) {
-        const title = String(sourceOffer.title ?? "").trim();
-        const url = String(sourceOffer.url ?? "").trim();
+        if (!sourceOffer || typeof sourceOffer !== "object") continue;
+        const title = String(sourceOffer.name ?? "").trim();
+        const id = String(sourceOffer.id ?? "");
+        const slug = String(sourceOffer.slug ?? "");
+        if (!/^\d+$/.test(id) || !/^[a-z0-9-]+$/.test(slug) || String(sourceOffer.type) !== "1") continue;
+        const url = `https://magnit.ru/promo-product/${id}-${slug}?shopCode=${MAGNIT_STORE.code}`;
         const sourceId = getSourceId(url);
+        const region = getRegion(url);
+        const salePrice = normalizePrice(sourceOffer.price);
 
-        if (!title || !url || !sourceId) {
+        if (!title || !sourceId || !region || salePrice === null) {
             continue;
         }
 
-        const discount = sourceOffer.discount
-            ? String(sourceOffer.discount).trim()
+        const discount = sourceOffer.discountLabel
+            ? String(sourceOffer.discountLabel).trim()
             : null;
+        const description = String(sourceOffer.description ?? "").trim();
+        const validFrom = normalizeDate(sourceOffer.startDate);
+        const validTo = normalizeDate(sourceOffer.endDate);
+        if ((sourceOffer.startDate != null && validFrom === null)
+            || (sourceOffer.endDate != null && validTo === null)
+            || (validFrom && validTo && validFrom > validTo)) continue;
 
         const offer = {
             sourceId,
             title,
             category: getCategory(title),
-            regularPrice: normalizePrice(sourceOffer.regularPrice),
-            salePrice: normalizePrice(sourceOffer.salePrice),
+            regularPrice: normalizePrice(sourceOffer.oldPrice),
+            salePrice,
             currency: "RUB",
-            validFrom: null,
-            validTo: null,
-            conditions: discount ? `Скидка: ${discount}` : null,
+            validFrom,
+            validTo,
+            conditions: [discount ? `Скидка: ${discount}` : null, description,
+                `Магазин: ${MAGNIT_STORE.address}.`].filter(Boolean).join("\n"),
             url,
-            region: "Екатеринбург",
+            region,
             checkedAt,
             isTest: false,
         };
@@ -208,6 +249,12 @@ export function convertOffers(sourceOffers) {
     }
 
     return [...uniqueOffers.values()];
+}
+
+export function normalizeDate(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
 }
 
 /*
@@ -246,6 +293,10 @@ export function updateCatalog({ force = forceUpdate, destination = outputFile, f
     console.log("Этап: преобразование данных");
     const convertedOffers = convertOffers(sourceOffers);
 
+    if (convertedOffers.length === 0) {
+        throw new Error("Источник не содержит корректных товарных предложений с ценой; предыдущий каталог сохранён");
+    }
+
     if (now() >= deadline) {
         throw new Error("Превышен общий лимит 30 секунд до записи каталога");
     }
@@ -254,6 +305,8 @@ export function updateCatalog({ force = forceUpdate, destination = outputFile, f
 
     console.log(`Получено предложений: ${sourceOffers.length}`);
     console.log(`Сохранено предложений: ${convertedOffers.length}`);
+    console.log(`Пропущено без цены, некорректных или повторных: ${sourceOffers.length - convertedOffers.length}`);
+    console.log(`Магазин: ${MAGNIT_STORE.address} (${MAGNIT_STORE.code})`);
     console.log(`Файл: ${destination}`);
 }
 

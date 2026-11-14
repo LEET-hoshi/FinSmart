@@ -79,7 +79,25 @@ req GET "/offers/$OFFER" "${AUTH[@]}"
 check "карточка скидки" 200 "$CODE"
 
 req GET /goals "${AUTH[@]}"
-check "лимит по кафе: потрачено считает backend из транзакций" True "$(echo "$BODY" | json '[g for g in d if g["type"]=="spending_limit"][0]["currentAmount"]!="0.00"')"
+BEFORE=$(echo "$BODY" | json '[g for g in d if g["type"]=="spending_limit"][0]["currentAmount"]')
+# Лимит считает текущий месяц: исторические CSV не должны увеличивать его.
+CURRENT_CSV=$(mktemp)
+"$PY" - "$CURRENT_CSV" <<'PYCSV'
+import csv, sys, uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
+with open(sys.argv[1], "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["operation_id", "date", "amount", "currency", "description", "mcc"])
+    writer.writerow([str(uuid.uuid4()), datetime.now(ZoneInfo("Asia/Yekaterinburg")).date(), "-123.45", "RUB", "Smoke cafe", "5812"])
+PYCSV
+req POST /transactions/import "${AUTH[@]}" -F "file=@$CURRENT_CSV;filename=current-month.csv"
+rm -f "$CURRENT_CSV"
+check "импорт расхода текущего месяца" "200 1" "$CODE $(echo "$BODY" | json 'd["imported"]')"
+req GET /goals "${AUTH[@]}"
+AFTER=$(echo "$BODY" | json '[g for g in d if g["type"]=="spending_limit"][0]["currentAmount"]')
+DELTA=$("$PY" -c 'from decimal import Decimal; import sys; print(Decimal(sys.argv[2])-Decimal(sys.argv[1]))' "$BEFORE" "$AFTER")
+check "лимит кафе увеличился ровно на сумму нового расхода" "123.45" "$DELTA"
 
 # Изоляция данных: второй пользователь не видит и не меняет чужое.
 req POST /auth/register -H 'Content-Type: application/json' -d "{\"email\":\"other-$EMAIL\",\"password\":\"demo12345\"}"
