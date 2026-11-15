@@ -84,12 +84,12 @@ BEFORE=$(echo "$BODY" | json '[g for g in d if g["type"]=="spending_limit"][0]["
 CURRENT_CSV=$(mktemp)
 "$PY" - "$CURRENT_CSV" <<'PYCSV'
 import csv, sys, uuid
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
+# Екатеринбург использует UTC+5; системная база таймзон не требуется.
 with open(sys.argv[1], "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow(["operation_id", "date", "amount", "currency", "description", "mcc"])
-    writer.writerow([str(uuid.uuid4()), datetime.now(ZoneInfo("Asia/Yekaterinburg")).date(), "-123.45", "RUB", "Smoke cafe", "5812"])
+    writer.writerow([str(uuid.uuid4()), datetime.now(timezone(timedelta(hours=5))).date(), "-123.45", "RUB", "Smoke cafe", "5812"])
 PYCSV
 req POST /transactions/import "${AUTH[@]}" -F "file=@$CURRENT_CSV;filename=current-month.csv"
 rm -f "$CURRENT_CSV"
