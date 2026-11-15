@@ -91,7 +91,7 @@ with open(sys.argv[1], "w", newline="") as f:
     writer.writerow(["operation_id", "date", "amount", "currency", "description", "mcc"])
     writer.writerow([str(uuid.uuid4()), datetime.now(timezone(timedelta(hours=5))).date(), "-123.45", "RUB", "Smoke cafe", "5812"])
 PYCSV
-req POST /transactions/import "${AUTH[@]}" -F "file=@$CURRENT_CSV;filename=current-month.csv"
+req POST /transactions/import "${AUTH[@]}" -F "file=@$CURRENT_CSV"
 rm -f "$CURRENT_CSV"
 check "импорт расхода текущего месяца" "200 1" "$CODE $(echo "$BODY" | json 'd["imported"]')"
 req GET /goals "${AUTH[@]}"
