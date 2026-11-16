@@ -21,7 +21,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080/\"")
+        }
         release {
+            buildConfigField("String", "BASE_URL", "\"https://api.finsmart.ru/\"")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -34,6 +38,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -53,21 +58,14 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    // Retrofit (Сеть)
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
-
-    // Room (База данных)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
-
-    // Navigation Compose (Навигация)
     implementation(libs.navigation.compose)
-
-    // DataStore (Хранение токена)
     implementation(libs.datastore)
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3")

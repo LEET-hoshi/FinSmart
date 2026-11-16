@@ -41,17 +41,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _isLoading.value = true
 
-            val month = "2026-10"
+            val month = DateUtils.getCurrentMonth()
 
             val summaryResult = repository.getAnalytics(month)
             val recommendationResult = repository.getRecommendation(month)
 
             if (summaryResult != null) {
                 _analytics.value = summaryResult
-                _error.value = null // Очищаем ошибку при успехе
+                _error.value = null
             } else {
-                // В авиарежиме не показываем страшную ошибку,
-                // если данные уже были загружены ранее
                 if (_analytics.value == null) {
                     _error.value = "Нет сети. Показаны последние данные."
                 }

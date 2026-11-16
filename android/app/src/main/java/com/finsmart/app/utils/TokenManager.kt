@@ -25,7 +25,15 @@ class TokenManager(context: Context) {
         return sharedPreferences.getString("jwt_token", null)
     }
 
+    fun saveRefreshToken(token: String) {
+        sharedPreferences.edit().putString("refresh_token", token).apply()
+    }
+
+    fun getRefreshToken(): String? {
+        return sharedPreferences.getString("refresh_token", null)
+    }
+
     fun clearToken() {
-        sharedPreferences.edit().remove("jwt_token").apply()
+        sharedPreferences.edit().remove("jwt_token").remove("refresh_token").apply()
     }
 }

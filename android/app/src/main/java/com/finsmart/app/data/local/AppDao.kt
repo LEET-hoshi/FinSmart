@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AppDao {
-    // --- Операции ---
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getTransactions(): Flow<List<TransactionEntity>>
 
@@ -18,7 +17,9 @@ interface AppDao {
     @Query("DELETE FROM transactions")
     suspend fun clearTransactions()
 
-    // --- Скидки ---
+    @Query("UPDATE transactions SET category = :category, categoryManual = 1 WHERE id = :id")
+    suspend fun updateTransactionCategory(id: String, category: String)
+
     @Query("SELECT * FROM offers")
     fun getOffers(): Flow<List<OfferEntity>>
 
@@ -28,7 +29,6 @@ interface AppDao {
     @Query("DELETE FROM offers")
     suspend fun clearOffers()
 
-    // --- Цели ---
     @Query("SELECT * FROM goals")
     fun getGoals(): Flow<List<GoalEntity>>
 

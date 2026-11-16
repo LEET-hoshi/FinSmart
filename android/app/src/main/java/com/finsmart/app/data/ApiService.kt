@@ -12,6 +12,9 @@ interface ApiService {
     @POST("auth/login")
     suspend fun login(@Body request: AuthRequest): Response<AuthResponse>
 
+    @POST("auth/refresh")
+    suspend fun refreshToken(@Body request: RefreshRequest): Response<AuthResponse>
+
     @Multipart
     @POST("transactions/import")
     suspend fun importCsv(@Part file: MultipartBody.Part): Response<ImportResult>
@@ -48,4 +51,3 @@ interface ApiService {
     @GET("ai/recommendation")
     suspend fun getRecommendation(@Query("month") month: String): Response<Recommendation>
 }
-

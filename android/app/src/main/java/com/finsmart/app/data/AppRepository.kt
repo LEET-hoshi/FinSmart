@@ -9,7 +9,6 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
-import com.finsmart.app.utils.DateUtils
 
 class AppRepository(
     private val context: Context,
@@ -19,12 +18,12 @@ class AppRepository(
 ) {
     private val dao = db.appDao()
 
-    // --- Авторизация ---
     suspend fun login(email: String, pass: String): Boolean {
         return try {
             val res = api.login(AuthRequest(email, pass))
             if (res.isSuccessful && res.body() != null) {
                 tokenManager.saveToken(res.body()!!.accessToken)
+                tokenManager.saveRefreshToken(res.body()!!.refreshToken)
                 true
             } else false
         } catch (e: Exception) {
@@ -37,6 +36,7 @@ class AppRepository(
             val res = api.register(AuthRequest(email, pass))
             if (res.isSuccessful && res.body() != null) {
                 tokenManager.saveToken(res.body()!!.accessToken)
+                tokenManager.saveRefreshToken(res.body()!!.refreshToken)
                 true
             } else false
         } catch (e: Exception) {
@@ -52,13 +52,10 @@ class AppRepository(
         tokenManager.clearToken()
     }
 
-    // --- Операции (Offline-First) ---
-    // Возвращаем Flow из Room, чтобы UI обновлялся автоматически
     fun getTransactionsFlow(): Flow<List<TransactionEntity>> = dao.getTransactions()
 
-    // Запрос к сети для обновления кэша
-    suspend fun syncTransactions(month: String) {
-        try {
+    suspend fun syncTransactions(month: String): Boolean {
+        return try {
             val res = api.getTransactions(month = month)
             if (res.isSuccessful && res.body() != null) {
                 val entities = res.body()!!.items.map {
@@ -70,10 +67,11 @@ class AppRepository(
                 }
                 dao.clearTransactions()
                 dao.insertTransactions(entities)
-            }
+                true
+            } else false
         } catch (e: Exception) {
-            // Ошибка сети игнорируется, данные останутся из кэша
             e.printStackTrace()
+            false
         }
     }
 
@@ -81,7 +79,7 @@ class AppRepository(
         return try {
             val res = api.updateTransactionCategory(id, mapOf("category" to category))
             if (res.isSuccessful) {
-                syncTransactions(DateUtils.getCurrentMonth())
+                dao.updateTransactionCategory(id, category)
                 true
             } else false
         } catch (e: Exception) {
@@ -89,7 +87,6 @@ class AppRepository(
         }
     }
 
-    // --- Импорт CSV ---
     suspend fun importCsv(file: File): ImportResult? {
         return try {
             val requestFile = file.asRequestBody("text/csv".toMediaTypeOrNull())
@@ -101,11 +98,10 @@ class AppRepository(
         }
     }
 
-    // --- Скидки (Offline-First) ---
     fun getOffersFlow(): Flow<List<OfferEntity>> = dao.getOffers()
 
-    suspend fun syncOffers(category: String? = null) {
-        try {
+    suspend fun syncOffers(category: String? = null): Boolean {
+        return try {
             val res = api.getOffers(category = category)
             if (res.isSuccessful && res.body() != null) {
                 val entities = res.body()!!.items.map {
@@ -116,15 +112,15 @@ class AppRepository(
                         url = it.url, region = it.region, checkedAt = it.checkedAt, potentialSaving = it.potentialSaving
                     )
                 }
-                dao.clearOffers()
                 dao.insertOffers(entities)
-            }
+                true
+            } else false
         } catch (e: Exception) {
             e.printStackTrace()
+            false
         }
     }
 
-    // --- Аналитика и Цели ---
     suspend fun getAnalytics(month: String): AnalyticsSummary? {
         return try {
             val res = api.getAnalyticsSummary(month)
