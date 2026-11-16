@@ -8,10 +8,11 @@ import com.finsmart.app.data.AppRepository
 import com.finsmart.app.data.RetrofitClient
 import com.finsmart.app.data.local.OfferEntity
 import com.finsmart.app.utils.TokenManager
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class OffersViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
     private val api = RetrofitClient.createApi(context)
@@ -19,41 +20,33 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
     private val tokenManager = TokenManager(context)
     private val repository = AppRepository(context, api, db, tokenManager)
 
-    private val _offers = MutableStateFlow<List<OfferEntity>>(emptyList())
-    val offers: StateFlow<List<OfferEntity>> = _offers
+    private val currentCategory = MutableStateFlow<String?>(null)
+
+    val offers: StateFlow<List<OfferEntity>> = currentCategory.flatMapLatest { cat ->
+        repository.getOffersFlow(cat)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    // Новые состояния для P1
     private val _isOffline = MutableStateFlow(false)
     val isOffline: StateFlow<Boolean> = _isOffline
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    init {
-        // Слушаем изменения из базы (кэш)
-        viewModelScope.launch {
-            repository.getOffersFlow().collect { list ->
-                _offers.value = list
-            }
-        }
-    }
-
     fun syncData(category: String? = null) {
+        currentCategory.value = category
         viewModelScope.launch {
             _isLoading.value = true
             _isOffline.value = false
             _error.value = null
 
-            // Проверяем, есть ли данные в кэше, чтобы знать, что показать при ошибке
-            val hasCache = _offers.value.isNotEmpty()
-
-            val success = repository.syncOffers(category) // Нужно, чтобы repo возвращал Boolean
+            val success = repository.syncOffers(category)
             if (!success) {
-                if (hasCache) {
-                    _isOffline.value = true // Нет сети, но есть кэш
+                val cachedData = offers.value
+                if (cachedData.isNotEmpty()) {
+                    _isOffline.value = true
                 } else {
                     _error.value = "Ошибка загрузки скидок. Проверьте сеть."
                 }

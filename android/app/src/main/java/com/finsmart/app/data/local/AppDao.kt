@@ -20,8 +20,8 @@ interface AppDao {
     @Query("UPDATE transactions SET category = :category, categoryManual = 1 WHERE id = :id")
     suspend fun updateTransactionCategory(id: String, category: String)
 
-    @Query("SELECT * FROM offers")
-    fun getOffers(): Flow<List<OfferEntity>>
+    @Query("SELECT * FROM offers WHERE (:category IS NULL OR category = :category)")
+    fun getOffersByCategory(category: String?): Flow<List<OfferEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOffers(offers: List<OfferEntity>)

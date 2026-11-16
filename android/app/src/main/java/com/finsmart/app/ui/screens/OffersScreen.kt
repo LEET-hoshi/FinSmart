@@ -34,7 +34,6 @@ fun OffersScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Плашка офлайн (если есть данные из кэша, но нет сети)
         if (isOffline) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(8.dp),

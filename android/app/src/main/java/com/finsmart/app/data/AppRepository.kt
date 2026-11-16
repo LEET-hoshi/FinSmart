@@ -98,7 +98,7 @@ class AppRepository(
         }
     }
 
-    fun getOffersFlow(): Flow<List<OfferEntity>> = dao.getOffers()
+    fun getOffersFlow(category: String? = null): Flow<List<OfferEntity>> = dao.getOffersByCategory(category)
 
     suspend fun syncOffers(category: String? = null): Boolean {
         return try {
