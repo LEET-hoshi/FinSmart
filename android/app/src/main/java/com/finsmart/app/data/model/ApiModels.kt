@@ -1,6 +1,8 @@
 package com.finsmart.app.data.model
-// Модели для авторизации
+
 data class AuthRequest(val email: String, val password: String)
+data class RefreshRequest(val refreshToken: String)
+
 data class AuthResponse(
     val accessToken: String,
     val refreshToken: String,
@@ -10,7 +12,6 @@ data class AuthResponse(
 )
 data class User(val id: String, val email: String)
 
-// Модели для операций
 data class TransactionResponse(
     val items: List<Transaction>,
     val total: Int,
@@ -22,7 +23,7 @@ data class Transaction(
     val id: String,
     val operationId: String,
     val date: String,
-    val amount: String, // Строка, так как в OpenAPI это Money
+    val amount: String,
     val currency: String,
     val description: String?,
     val mcc: String?,
@@ -30,7 +31,6 @@ data class Transaction(
     val categoryManual: Boolean
 )
 
-// Модели для аналитики
 data class AnalyticsSummary(
     val month: String,
     val previousMonth: String,
@@ -50,7 +50,6 @@ data class CategorySummary(
     val sharePercent: Double
 )
 
-// Модели для скидок
 data class OfferList(
     val items: List<Offer>,
     val catalogCheckedAt: String?
@@ -73,7 +72,6 @@ data class Offer(
     val potentialSaving: String?
 )
 
-// Модели для целей
 data class Goal(
     val id: String,
     val title: String,
@@ -87,17 +85,15 @@ data class Goal(
     val updatedAt: String
 )
 
-// Модели для создания цели
 data class GoalCreate(
     val title: String,
     val targetAmount: String,
     val currentAmount: String? = null,
     val deadline: String? = null,
     val category: String? = null,
-    val type: String = "saving" // По умолчанию - накопление
+    val type: String = "saving"
 )
 
-// Модели для импорта
 data class ImportResult(
     val imported: Int,
     val duplicates: Int,
@@ -106,7 +102,6 @@ data class ImportResult(
 )
 data class ImportRowError(val line: Int, val field: String?, val reason: String)
 
-// Модель для рекомендаций ИИ
 data class Recommendation(
     val title: String,
     val message: String,

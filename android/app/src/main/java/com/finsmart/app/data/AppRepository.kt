@@ -18,12 +18,12 @@ class AppRepository(
 ) {
     private val dao = db.appDao()
 
-    // --- Авторизация ---
     suspend fun login(email: String, pass: String): Boolean {
         return try {
             val res = api.login(AuthRequest(email, pass))
             if (res.isSuccessful && res.body() != null) {
                 tokenManager.saveToken(res.body()!!.accessToken)
+                tokenManager.saveRefreshToken(res.body()!!.refreshToken)
                 true
             } else false
         } catch (e: Exception) {
@@ -36,6 +36,7 @@ class AppRepository(
             val res = api.register(AuthRequest(email, pass))
             if (res.isSuccessful && res.body() != null) {
                 tokenManager.saveToken(res.body()!!.accessToken)
+                tokenManager.saveRefreshToken(res.body()!!.refreshToken)
                 true
             } else false
         } catch (e: Exception) {
@@ -51,10 +52,8 @@ class AppRepository(
         tokenManager.clearToken()
     }
 
-    // --- Операции (Offline-First) ---
     fun getTransactionsFlow(): Flow<List<TransactionEntity>> = dao.getTransactions()
 
-    // Возвращаем Boolean, чтобы UI знал об успехе/ошибке
     suspend fun syncTransactions(month: String): Boolean {
         return try {
             val res = api.getTransactions(month = month)
@@ -80,16 +79,14 @@ class AppRepository(
         return try {
             val res = api.updateTransactionCategory(id, mapOf("category" to category))
             if (res.isSuccessful) {
-                // Обновляем локальную базу, чтобы изменения сразу отобразились
-                // (в реальном приложении лучше делать точечное обновление, но для MVP сойдет)
-                res.isSuccessful
+                dao.updateTransactionCategory(id, category)
+                true
             } else false
         } catch (e: Exception) {
             false
         }
     }
 
-    // --- Импорт CSV ---
     suspend fun importCsv(file: File): ImportResult? {
         return try {
             val requestFile = file.asRequestBody("text/csv".toMediaTypeOrNull())
@@ -101,10 +98,8 @@ class AppRepository(
         }
     }
 
-    // --- Скидки (Offline-First) ---
     fun getOffersFlow(): Flow<List<OfferEntity>> = dao.getOffers()
 
-    // Возвращаем Boolean для обработки офлайн-режима на экране скидок
     suspend fun syncOffers(category: String? = null): Boolean {
         return try {
             val res = api.getOffers(category = category)
@@ -117,7 +112,6 @@ class AppRepository(
                         url = it.url, region = it.region, checkedAt = it.checkedAt, potentialSaving = it.potentialSaving
                     )
                 }
-                dao.clearOffers()
                 dao.insertOffers(entities)
                 true
             } else false
@@ -127,7 +121,6 @@ class AppRepository(
         }
     }
 
-    // --- Аналитика и Цели ---
     suspend fun getAnalytics(month: String): AnalyticsSummary? {
         return try {
             val res = api.getAnalyticsSummary(month)

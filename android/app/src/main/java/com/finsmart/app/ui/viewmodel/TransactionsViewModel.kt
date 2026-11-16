@@ -35,7 +35,6 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
     val error: StateFlow<String?> = _error
 
     init {
-        // Слушаем изменения из базы данных (Room)
         viewModelScope.launch {
             repository.getTransactionsFlow().collect { list ->
                 _transactions.value = list
@@ -47,7 +46,7 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
     fun syncData() {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.syncTransactions("2026-10")
+            repository.syncTransactions(DateUtils.getCurrentMonth())
             _isLoading.value = false
         }
     }
@@ -61,7 +60,7 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
             val result = repository.importCsv(file)
             if (result != null) {
                 _importResult.value = result
-                repository.syncTransactions("2026-10")
+                repository.syncTransactions(DateUtils.getCurrentMonth())
             } else {
                 _error.value = "Ошибка импорта. Проверьте соединение."
             }
@@ -71,11 +70,7 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
 
     fun updateCategory(id: String, category: String) {
         viewModelScope.launch {
-            val success = repository.updateCategory(id, category)
-            if (success) {
-                // После смены категории обновляем данные
-                repository.syncTransactions("2026-10")
-            }
+            repository.updateCategory(id, category)
         }
     }
 }
