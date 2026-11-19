@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+val customBaseUrl = localProperties.getProperty("api.base.url") ?: "http://10.0.2.2:8080/"
 
 android {
     namespace = "com.finsmart.app"
@@ -16,16 +25,17 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080/\"")
+            buildConfigField("String", "BASE_URL", "\"$customBaseUrl\"")
+            manifestPlaceholders["usesCleartext"] = "true"
         }
         release {
             buildConfigField("String", "BASE_URL", "\"https://api.finsmart.ru/\"")
+            manifestPlaceholders["usesCleartext"] = "false"
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -58,6 +68,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp)
@@ -70,4 +81,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
