@@ -51,4 +51,4 @@ docker compose up --build
 
 Порты, пароль БД и `JWT_SECRET` (не короче 32 символов) задаются в `.env` (шаблон — `.env.example`); без `.env` используются значения для локальной разработки. Полный сброс БД: `docker compose down -v`.
 
-Если порт 8080 занят (например, локальным веб-сервером), задайте `API_PORT` в `.env`. Сквозная проверка демо-сценария: `bash scripts/smoke.sh`; состояние backend и план — `docs/operations/backend-handoff.md`.
+Если порт 8080 занят (например, локальным веб-сервером), задайте `API_PORT` в `.env`. Сквозная проверка демо-сценария: `bash scripts/smoke.sh`; состояние backend и план — `docs/operations/backend-handoff.md`. Переменные окружения, rate limit и реальный IP за reverse proxy — `docs/operations/production.md`.
