@@ -50,7 +50,9 @@ data class LlmConfig(
     val endpoint: String? = null,
     val apiKey: String? = null,
     val timeout: Duration = Duration.ofSeconds(5),
-)
+) {
+    val mode: String get() = if (enabled && endpoint != null) "llm" else "rules"
+}
 
 data class RateLimitConfig(
     val authPerMinute: Int = DEFAULT_AUTH_PER_MINUTE,

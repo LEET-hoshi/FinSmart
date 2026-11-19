@@ -51,6 +51,7 @@ paths:
               example:
                 status: ok
                 database: ok
+                recommendations: rules
         "503":
           description: БД недоступна
           content:
@@ -60,6 +61,7 @@ paths:
               example:
                 status: degraded
                 database: unavailable
+                recommendations: rules
 
   /auth/register:
     post:
@@ -726,7 +728,7 @@ components:
 
     Health:
       type: object
-      required: [status, database]
+      required: [status, database, recommendations]
       properties:
         status:
           type: string
@@ -734,6 +736,13 @@ components:
         database:
           type: string
           enum: [ok, unavailable]
+        recommendations:
+          type: string
+          enum: [rules, llm]
+          description: |
+            Режим `GET /ai/recommendation` по конфигурации сервера: `llm`, если включена LLM и задан её адрес,
+            иначе `rules`. Адрес, ключ и другие настройки LLM не раскрываются. При `llm` отдельная рекомендация
+            всё равно может прийти с `source: rules`, если LLM не ответила.
 
     Money:
       type: string

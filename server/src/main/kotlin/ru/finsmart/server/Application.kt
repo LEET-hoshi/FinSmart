@@ -142,7 +142,7 @@ fun Application.module(config: AppConfig, dataSource: DataSource) {
     configureRateLimits(config.rateLimit)
 
     routing {
-        healthRoutes(dataSource)
+        healthRoutes(dataSource, config.llm.mode)
         authRoutes(authService)
         categoryRoutes(categoryRepository)
         authenticate(JWT_AUTH) {

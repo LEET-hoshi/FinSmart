@@ -13,9 +13,10 @@ import javax.sql.DataSource
 data class HealthResponse(
     val status: String,
     val database: String,
+    val recommendations: String,
 )
 
-fun Route.healthRoutes(dataSource: DataSource) {
+fun Route.healthRoutes(dataSource: DataSource, recommendationsMode: String) {
     get("/health") {
         val dbOk = runCatching {
             withContext(Dispatchers.IO) {
@@ -24,9 +25,9 @@ fun Route.healthRoutes(dataSource: DataSource) {
         }.getOrDefault(false)
 
         if (dbOk) {
-            call.respond(HealthResponse(status = "ok", database = "ok"))
+            call.respond(HealthResponse(status = "ok", database = "ok", recommendations = recommendationsMode))
         } else {
-            call.respond(HttpStatusCode.ServiceUnavailable, HealthResponse(status = "degraded", database = "unavailable"))
+            call.respond(HttpStatusCode.ServiceUnavailable, HealthResponse(status = "degraded", database = "unavailable", recommendations = recommendationsMode))
         }
     }
 }

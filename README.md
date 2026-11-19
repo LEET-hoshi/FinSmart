@@ -47,7 +47,7 @@ docker compose up --build
 
 Поднимаются PostgreSQL 16 и API на `http://localhost:8080`. При старте API применяет Flyway-миграции и справочники категорий/MCC.
 
-Проверка: `http://localhost:8080/health` → `{"status":"ok","database":"ok"}`.
+Проверка: `http://localhost:8080/health` → `{"status":"ok","database":"ok","recommendations":"rules"}`.
 
 Порты, пароль БД и `JWT_SECRET` (не короче 32 символов) задаются в `.env` (шаблон — `.env.example`); без `.env` используются значения для локальной разработки. Полный сброс БД: `docker compose down -v`.
 
