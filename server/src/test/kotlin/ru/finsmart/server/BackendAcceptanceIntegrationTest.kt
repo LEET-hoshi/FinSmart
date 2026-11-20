@@ -124,6 +124,48 @@ class BackendAcceptanceIntegrationTest {
         }
 
     @Test
+    fun mvp_route_from_registration_to_goal() = apiTest {
+        val credentials = """{"email":"it-${UUID.randomUUID()}@test.local","password":"password123"}"""
+        val registered = client.post("/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(credentials)
+        }
+        assertEquals(HttpStatusCode.Created, registered.status, registered.bodyAsText())
+
+        val login = client.post("/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(credentials)
+        }
+        assertEquals(HttpStatusCode.OK, login.status, login.bodyAsText())
+        val user = User(login.json().jsonObject.str("accessToken"))
+
+        val imported = client.importCsv(user, "valid.csv")
+        assertEquals(37 to 0, imported.int("imported") to imported.int("duplicates"))
+        assertEquals(37, client.transactions(user).int("total"))
+
+        val summary = client.authJson(user, "/analytics/summary?month=2026-10")
+        assertEquals("30078.15", summary.str("totalExpense"))
+        assertEquals("home", summary.str("topCategory"))
+
+        val created = client.post("/goals") {
+            header(HttpHeaders.Authorization, "Bearer ${user.token}")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Отпуск","targetAmount":"100000","currentAmount":"25000"}""")
+        }
+        assertEquals(HttpStatusCode.Created, created.status, created.bodyAsText())
+        val goalId = created.json().jsonObject.str("id")
+
+        val goals = client.authGet(user, "/goals")
+        assertEquals(HttpStatusCode.OK, goals.status, goals.bodyAsText())
+        val goal = goals.json().jsonArray.single().jsonObject
+        assertEquals(goalId, goal.str("id"))
+        assertEquals("25.0", goal.str("progressPercent"))
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+        assertEquals("rules", recommendation.str("source"))
+    }
+
+    @Test
     fun user_cannot_read_or_change_foreign_data() = apiTest {
         val owner = client.register()
         val stranger = client.register()
