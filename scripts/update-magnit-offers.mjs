@@ -32,6 +32,7 @@ const outputFile = join(
 
 const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
 const allowedClockSkewInMilliseconds = 5 * 60 * 1000;
+const isoTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const forceUpdate = process.argv.includes("--force");
 export const MAGNIT_STORE = Object.freeze({
     code: "667052",
@@ -112,7 +113,8 @@ function hasCurrentPrices(offers, now) {
         offer && typeof offer.salePrice === "string" && /^\d+\.\d{2}$/.test(offer.salePrice)
         && Number(offer.salePrice) > 0 && offer.region === MAGNIT_STORE.region
         && getRegion(offer.url) === MAGNIT_STORE.region
-        && typeof offer.checkedAt === "string" && Number.isFinite(Date.parse(offer.checkedAt))
+        && typeof offer.checkedAt === "string" && isoTimestampPattern.test(offer.checkedAt)
+        && Number.isFinite(Date.parse(offer.checkedAt))
         && now - Date.parse(offer.checkedAt) >= -allowedClockSkewInMilliseconds
         && now - Date.parse(offer.checkedAt) < oneDayInMilliseconds);
 }

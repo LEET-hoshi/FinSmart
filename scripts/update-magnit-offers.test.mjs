@@ -143,6 +143,7 @@ test("ответ без цен сохраняет предыдущий файл;
         good.map(x => ({ ...x, url: x.url.replace("667052", "992301") })),
         good.map(x => ({ ...x, checkedAt: null })),
         good.map(x => ({ ...x, checkedAt: "not-a-date" })),
+        good.map(x => ({ ...x, checkedAt: "November 20, 2026 17:00:00 UTC" })),
         good.map(x => ({ ...x, checkedAt: "2020-01-01T00:00:00.000Z" })),
         good.map(x => ({ ...x, checkedAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }))]) {
         writeFileSync(destination, JSON.stringify(bad));
