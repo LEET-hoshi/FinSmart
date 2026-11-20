@@ -9,6 +9,8 @@
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `JWT_SECRET` | значение для разработки | Секрет подписи JWT, не короче 32 символов. В production обязательно свой |
+| `ACCESS_TOKEN_TTL_SECONDS` | `3600` | Время жизни access-токена в секундах |
+| `REFRESH_TOKEN_TTL_DAYS` | `30` | Время жизни refresh-токена в днях |
 | `RATE_LIMIT_AUTH_PER_MINUTE` | `10` | Лимит `POST /auth/login` и `/auth/register` в минуту на один IP (общий для обоих) |
 | `RATE_LIMIT_IMPORT_PER_MINUTE` | `10` | Лимит `POST /transactions/import` в минуту на пользователя |
 | `LLM_ENABLED` | `false` | Включает внешний LLM-провайдер рекомендаций |
