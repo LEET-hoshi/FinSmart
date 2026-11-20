@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAGNIT_STORE, normalizePrice, normalizeDate, getSourceId, getRegion, getCategory,
-    convertOffers, saveOffers, loadMagnitOffers, updateCatalog, catalogIsFresh } from "./update-magnit-offers.mjs";
+    convertOffers, convertOffersWithStats, formatImportSummary, saveOffers, loadMagnitOffers,
+    updateCatalog, catalogIsFresh } from "./update-magnit-offers.mjs";
 
 const sample = JSON.parse(readFileSync(new URL("../fixtures/offers/magnit-source-sample.json", import.meta.url), "utf8"));
 const url = "https://magnit.ru/promo-product/2190451-lamber-syr-50-100-g?shopCode=667052";
@@ -42,7 +43,8 @@ test("правило запрашивает именно товарные ски
 });
 
 test("преобразование сохраняет цены, условия карты и количества, даты и уникальные ID", () => {
-    const items = convertOffers([
+    const checkedAt = "2026-11-20T17:21:25.759Z";
+    const { offers: items, stats } = convertOffersWithStats([
         ...sample.data,
         { ...sample.data[0], name: "Сыр обновлённый" },
         null,
@@ -52,7 +54,7 @@ test("преобразование сохраняет цены, условия �
         { ...sample.data[0], id: "7", type: "19" },
         { ...sample.data[0], id: "8", endDate: "2026-02-30" },
         { ...sample.data[0], id: "9", endDate: "2026-11-01" },
-    ]);
+    ], checkedAt);
     assert.equal(items.length, 2);
     assert.equal(items[0].title, "Сыр обновлённый");
     assert.equal(items[0].regularPrice, "159.99");
@@ -70,15 +72,35 @@ test("преобразование сохраняет цены, условия �
         assert.equal(item.region, "Екатеринбург");
         assert.equal(new URL(item.url).searchParams.get("shopCode"), "667052");
         assert.match(item.conditions, /Первомайская, 76/);
-        assert.match(item.checkedAt, /^\d{4}-\d\d-\d\dT/);
+        assert.equal(item.checkedAt, checkedAt);
         assert.match(item.salePrice, /^\d+\.\d{2}$/);
     }
+    assert.deepEqual(stats, {
+        received: 10,
+        accepted: 2,
+        skipped: 8,
+        skippedByReason: {
+            missingPrice: 0,
+            invalidData: 5,
+            invalidDates: 2,
+            duplicateSourceId: 1,
+        },
+    });
+    assert.deepEqual(formatImportSummary(stats, checkedAt), [
+        `Дата обновления: ${checkedAt}`,
+        "Получено предложений: 10",
+        "Принято предложений: 2",
+        "Пропущено предложений: 8",
+        "Причины пропуска: без корректной цены — 0; некорректные данные — 5; "
+            + "некорректные даты — 2; повторный sourceId — 1.",
+    ]);
 });
 
 test("цена из описания или от покупки нескольких штук не выдаётся за обычную цену", () => {
     const withoutPrice = { ...sample.data[0], id: "1", price: null, description: "От 2 шт — 134,99 ₽",
         progressiveDiscount: [{ count: 2, value: 13499 }] };
     assert.deepEqual(convertOffers([withoutPrice]), []);
+    assert.equal(convertOffersWithStats([withoutPrice]).stats.skippedByReason.missingPrice, 1);
     assert.equal(convertOffers([withoutPrice, ...sample.data]).length, 2);
     assert.equal(normalizeDate("2026-02-30"), null);
     assert.equal(normalizeDate("2026-11-17"), "2026-11-17");
@@ -118,7 +140,11 @@ test("ответ без цен сохраняет предыдущий файл;
     const good = convertOffers(sample.data);
     for (const bad of [[], good.map(x => ({ ...x, salePrice: null })),
         good.map(x => ({ ...x, region: "Краснодар" })),
-        good.map(x => ({ ...x, url: x.url.replace("667052", "992301") }))]) {
+        good.map(x => ({ ...x, url: x.url.replace("667052", "992301") })),
+        good.map(x => ({ ...x, checkedAt: null })),
+        good.map(x => ({ ...x, checkedAt: "not-a-date" })),
+        good.map(x => ({ ...x, checkedAt: "2020-01-01T00:00:00.000Z" })),
+        good.map(x => ({ ...x, checkedAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }))]) {
         writeFileSync(destination, JSON.stringify(bad));
         assert.equal(catalogIsFresh(destination), false);
     }

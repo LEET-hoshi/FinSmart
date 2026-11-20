@@ -31,6 +31,7 @@ const outputFile = join(
 );
 
 const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
+const allowedClockSkewInMilliseconds = 5 * 60 * 1000;
 const forceUpdate = process.argv.includes("--force");
 export const MAGNIT_STORE = Object.freeze({
     code: "667052",
@@ -106,25 +107,28 @@ export function getCategory(title) {
 /*
  * Проверяет, обновлялся ли каталог меньше суток назад.
  */
-function hasCurrentPrices(offers) {
+function hasCurrentPrices(offers, now) {
     return Array.isArray(offers) && offers.length > 0 && offers.every((offer) =>
         offer && typeof offer.salePrice === "string" && /^\d+\.\d{2}$/.test(offer.salePrice)
         && Number(offer.salePrice) > 0 && offer.region === MAGNIT_STORE.region
-        && getRegion(offer.url) === MAGNIT_STORE.region);
+        && getRegion(offer.url) === MAGNIT_STORE.region
+        && typeof offer.checkedAt === "string" && Number.isFinite(Date.parse(offer.checkedAt))
+        && now - Date.parse(offer.checkedAt) >= -allowedClockSkewInMilliseconds
+        && now - Date.parse(offer.checkedAt) < oneDayInMilliseconds);
 }
 
-export function catalogIsFresh(file = outputFile) {
+export function catalogIsFresh(file = outputFile, now = Date.now()) {
     if (!existsSync(file)) {
         return false;
     }
 
-    const fileAge = Date.now() - statSync(file).mtimeMs;
-    if (fileAge >= oneDayInMilliseconds) {
+    const fileAge = now - statSync(file).mtimeMs;
+    if (fileAge < -allowedClockSkewInMilliseconds || fileAge >= oneDayInMilliseconds) {
         return false;
     }
 
     try {
-        return hasCurrentPrices(JSON.parse(readFileSync(file, "utf8")));
+        return hasCurrentPrices(JSON.parse(readFileSync(file, "utf8")), now);
     } catch {
         return false;
     }
@@ -199,22 +203,40 @@ export function loadMagnitOffers({ cliPath = resolve(projectDirectory, "node_mod
 /*
  * Преобразует данные Магнита в формат FinSmart.
  */
-export function convertOffers(sourceOffers) {
-    const checkedAt = new Date().toISOString();
+export function convertOffersWithStats(sourceOffers, checkedAt = new Date().toISOString()) {
     const uniqueOffers = new Map();
+    const skippedByReason = {
+        missingPrice: 0,
+        invalidData: 0,
+        invalidDates: 0,
+        duplicateSourceId: 0,
+    };
 
     for (const sourceOffer of sourceOffers) {
-        if (!sourceOffer || typeof sourceOffer !== "object") continue;
+        if (!sourceOffer || typeof sourceOffer !== "object") {
+            skippedByReason.invalidData += 1;
+            continue;
+        }
         const title = String(sourceOffer.name ?? "").trim();
         const id = String(sourceOffer.id ?? "");
         const slug = String(sourceOffer.slug ?? "");
-        if (!/^\d+$/.test(id) || !/^[a-z0-9-]+$/.test(slug) || String(sourceOffer.type) !== "1") continue;
+        if (!title || !/^\d+$/.test(id) || !/^[a-z0-9-]+$/.test(slug)
+            || String(sourceOffer.type) !== "1") {
+            skippedByReason.invalidData += 1;
+            continue;
+        }
         const url = `https://magnit.ru/promo-product/${id}-${slug}?shopCode=${MAGNIT_STORE.code}`;
         const sourceId = getSourceId(url);
         const region = getRegion(url);
         const salePrice = normalizePrice(sourceOffer.price);
 
-        if (!title || !sourceId || !region || salePrice === null) {
+        if (!sourceId || !region) {
+            skippedByReason.invalidData += 1;
+            continue;
+        }
+
+        if (salePrice === null) {
+            skippedByReason.missingPrice += 1;
             continue;
         }
 
@@ -226,7 +248,10 @@ export function convertOffers(sourceOffers) {
         const validTo = normalizeDate(sourceOffer.endDate);
         if ((sourceOffer.startDate != null && validFrom === null)
             || (sourceOffer.endDate != null && validTo === null)
-            || (validFrom && validTo && validFrom > validTo)) continue;
+            || (validFrom && validTo && validFrom > validTo)) {
+            skippedByReason.invalidDates += 1;
+            continue;
+        }
 
         const offer = {
             sourceId,
@@ -245,10 +270,39 @@ export function convertOffers(sourceOffers) {
             isTest: false,
         };
 
+        if (uniqueOffers.has(sourceId)) {
+            skippedByReason.duplicateSourceId += 1;
+        }
         uniqueOffers.set(sourceId, offer);
     }
 
-    return [...uniqueOffers.values()];
+    const offers = [...uniqueOffers.values()];
+    return {
+        offers,
+        stats: {
+            received: sourceOffers.length,
+            accepted: offers.length,
+            skipped: sourceOffers.length - offers.length,
+            skippedByReason,
+        },
+    };
+}
+
+export function convertOffers(sourceOffers) {
+    return convertOffersWithStats(sourceOffers).offers;
+}
+
+export function formatImportSummary(stats, updatedAt) {
+    return [
+        `Дата обновления: ${updatedAt}`,
+        `Получено предложений: ${stats.received}`,
+        `Принято предложений: ${stats.accepted}`,
+        `Пропущено предложений: ${stats.skipped}`,
+        `Причины пропуска: без корректной цены — ${stats.skippedByReason.missingPrice}; `
+            + `некорректные данные — ${stats.skippedByReason.invalidData}; `
+            + `некорректные даты — ${stats.skippedByReason.invalidDates}; `
+            + `повторный sourceId — ${stats.skippedByReason.duplicateSourceId}.`,
+    ];
 }
 
 export function normalizeDate(value) {
@@ -279,9 +333,11 @@ export function saveOffers(offers, destination = outputFile) {
 
 export function updateCatalog({ force = forceUpdate, destination = outputFile, fetchOffers = loadMagnitOffers, now = Date.now } = {}) {
     if (!force && destination === outputFile && catalogIsFresh()) {
+        const cachedOffers = JSON.parse(readFileSync(outputFile, "utf8"));
         console.log(
             "Каталог обновлялся меньше 24 часов назад. Обновление не требуется.",
         );
+        console.log(`Дата последнего успешного обновления: ${cachedOffers[0].checkedAt}`);
         console.log(`Файл: ${outputFile}`);
         return;
     }
@@ -291,10 +347,11 @@ export function updateCatalog({ force = forceUpdate, destination = outputFile, f
 
     const sourceOffers = fetchOffers({ timeoutMs: Math.max(1, deadline - now()) });
     console.log("Этап: преобразование данных");
-    const convertedOffers = convertOffers(sourceOffers);
+    const { offers: convertedOffers, stats } = convertOffersWithStats(sourceOffers);
 
     if (convertedOffers.length === 0) {
-        throw new Error("Источник не содержит корректных товарных предложений с ценой; предыдущий каталог сохранён");
+        const reasons = formatImportSummary(stats, new Date().toISOString()).at(-1);
+        throw new Error(`Источник не содержит корректных товарных предложений с ценой; ${reasons}`);
     }
 
     if (now() >= deadline) {
@@ -303,9 +360,9 @@ export function updateCatalog({ force = forceUpdate, destination = outputFile, f
     console.log("Этап: запись файла");
     saveOffers(convertedOffers, destination);
 
-    console.log(`Получено предложений: ${sourceOffers.length}`);
-    console.log(`Сохранено предложений: ${convertedOffers.length}`);
-    console.log(`Пропущено без цены, некорректных или повторных: ${sourceOffers.length - convertedOffers.length}`);
+    for (const line of formatImportSummary(stats, convertedOffers[0].checkedAt)) {
+        console.log(line);
+    }
     console.log(`Магазин: ${MAGNIT_STORE.address} (${MAGNIT_STORE.code})`);
     console.log(`Файл: ${destination}`);
 }
