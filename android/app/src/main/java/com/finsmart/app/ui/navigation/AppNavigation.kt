@@ -128,7 +128,6 @@ fun AppMainScreen() {
             }
             composable(Screen.Transactions.route) { TransactionsScreen() }
 
-            // Передаем выбранную категорию (если есть)
             composable(Screen.Offers.route) {
                 OffersScreen(category = selectedCategory)
             }
