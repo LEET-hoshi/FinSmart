@@ -55,9 +55,7 @@ class RuleBasedProviderTest {
         val provider = LlmProvider(LlmConfig())
 
         assertFailsWith<IllegalArgumentException> {
-            provider.parseResponse(
-                """{"title":"Совет","message":"Текст","category":"home","actionType":"open_offers","actionLabel":"Скидки","extra":true}""",
-            )
+            provider.parseResponse(validLlmResponse().dropLast(1) + ""","extra":true}""")
         }
     }
 
@@ -66,7 +64,7 @@ class RuleBasedProviderTest {
         val provider = LlmProvider(LlmConfig())
 
         val result = provider.parseResponse(
-            """{"title":"Совет","message":"Проверьте скидки на товары для дома","category":"home","actionType":"open_offers","actionLabel":"Посмотреть скидки"}""",
+            validLlmResponse(),
         )
 
         assertEquals("llm", result.source)
@@ -98,6 +96,18 @@ class RuleBasedProviderTest {
 
         assertFailsWith<IllegalArgumentException> {
             provider.parseResponse(validLlmResponse(category = null))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            provider.parseResponse(validLlmResponse().replace(""""category":"home",""", ""))
+        }
+    }
+
+    @Test
+    fun `rejects LLM message without the Russian category name`() {
+        val provider = LlmProvider(LlmConfig())
+
+        assertFailsWith<IllegalArgumentException> {
+            provider.parseResponse(validLlmResponse().replace("Дом", "home"))
         }
     }
 
@@ -151,7 +161,7 @@ class RuleBasedProviderTest {
         category: String? = "home",
         actionType: String = "open_offers",
     ): String =
-        """{"title":"Совет","message":"Проверьте скидки","category":${category?.let { "\"$it\"" } ?: "null"},"actionType":"$actionType","actionLabel":"Посмотреть скидки"}"""
+        """{"title":"Совет","message":"Проверьте скидки в категории «Дом»","category":${category?.let { "\"$it\"" } ?: "null"},"actionType":"$actionType","actionLabel":"Посмотреть скидки"}"""
 
     private fun input(
         change: Double?,
