@@ -1,8 +1,11 @@
 {
   "private": true,
   "scripts": {
+    "offers:update": "node scripts/update-magnit-offers.mjs",
+    "app:start": "node scripts/start-with-magnit.mjs",
+    "app:start:demo": "node scripts/start-with-magnit.mjs --demo",
     "test": "npm run test:offers",
-    "test:offers": "node --test scripts/update-magnit-offers.test.mjs"
+    "test:offers": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "api-anything": "0.3.2"

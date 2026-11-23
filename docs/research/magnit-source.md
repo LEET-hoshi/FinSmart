@@ -92,23 +92,25 @@ node scripts/update-magnit-offers.mjs --force
 build/generated/fixtures/offers/offers.json
 ```
 
-Папка `build` не добавляется в Git. Для запуска backend с этим каталогом
-в macOS/Linux:
+Папка `build` не добавляется в Git. При обычном запуске Docker Compose
+одноразовый контейнер `offers-updater` сам обновляет каталог и сохраняет его
+в общий Docker volume перед запуском API:
 
 ```bash
-FIXTURES_DIR="$PWD/build/generated/fixtures" DB_PORT=55432 docker compose up --build -d
-```
-
-В PowerShell:
-
-```powershell
-$env:FIXTURES_DIR = "$((Get-Location).Path)/build/generated/fixtures"
-$env:DB_PORT = "55432"
 docker compose up --build -d
 ```
 
+Команда одинакова в macOS, Linux и PowerShell. Для явного автономного запуска
+с демонстрационными данными:
+
+```bash
+npm run app:start:demo
+```
+
 Backend использует upsert по `sourceId`; истёкшие предложения исключает
-из обычного списка. Запуск адаптера сам по себе не перезапускает backend.
+из обычного списка. После успешного рабочего импорта демонстрационные записи
+удаляются. При временном отказе источника Docker volume сохраняет последний
+успешный рабочий каталог.
 
 ## Ошибки, кэш и ограничения запросов
 
