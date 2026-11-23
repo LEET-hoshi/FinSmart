@@ -4,7 +4,16 @@ import java.time.YearMonth
 import java.util.UUID
 
 object Categories {
-    val CODES = setOf("groceries", "cafes", "transport", "health", "home", "entertainment", "other")
+    val russianNames: Map<String, String> = mapOf(
+        "groceries" to "Продукты",
+        "cafes" to "Кафе и рестораны",
+        "transport" to "Транспорт",
+        "health" to "Здоровье",
+        "home" to "Дом",
+        "entertainment" to "Развлечения",
+        "other" to "Прочее",
+    )
+    val CODES: Set<String> = russianNames.keys
     const val FALLBACK = "other"
 }
 

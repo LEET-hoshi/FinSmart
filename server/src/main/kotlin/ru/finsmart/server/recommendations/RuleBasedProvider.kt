@@ -1,5 +1,7 @@
 package ru.finsmart.server.recommendations
 
+import ru.finsmart.server.common.Categories
+
 class RuleBasedProvider : RecommendationProvider {
 
     override suspend fun recommend(
@@ -39,9 +41,10 @@ class RuleBasedProvider : RecommendationProvider {
                 )
             }
 
+            val categoryName = Categories.russianNames[category] ?: "выбранной категории"
             return RecommendationResponse(
                 title = "Расходы выросли",
-                message = "Расходы в категории «${categoryName(category)}» выросли сильнее всего. " +
+                message = "Расходы в категории «$categoryName» выросли сильнее всего. " +
                     "Посмотрите скидки в этой категории." + goalProgressSuffix(input),
                 category = category,
                 actionType = "open_offers",
@@ -62,20 +65,6 @@ class RuleBasedProvider : RecommendationProvider {
 
     private fun goalProgressSuffix(input: RecommendationInput): String =
         input.goalProgressPercent?.let { " Прогресс по ближайшей цели: ${"%.1f".format(java.util.Locale.US, it)}%." } ?: ""
-
-    private fun categoryName(code: String): String = CATEGORY_NAMES[code] ?: "выбранной категории"
-
-    private companion object {
-        val CATEGORY_NAMES = mapOf(
-            "groceries" to "Продукты",
-            "cafes" to "Кафе и рестораны",
-            "transport" to "Транспорт",
-            "health" to "Здоровье",
-            "home" to "Дом",
-            "entertainment" to "Развлечения",
-            "other" to "Прочее",
-        )
-    }
 }
 
 

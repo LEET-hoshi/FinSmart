@@ -1,5 +1,8 @@
 package ru.finsmart.server.recommendations
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -12,16 +15,22 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
+import kotlin.time.toKotlinDuration
 
 /**
  * Optional provider adapter. The request is deliberately constructed from the
- * [RecommendationInput] allow-list: no CSV, transaction text, identity, token or
- * other personal data can reach an external provider through this class.
+ * [RecommendationInput] allow-list. The optional provider credential is only
+ * used for upstream authentication. Incoming request headers are never forwarded.
  */
 class LlmProvider(
     private val config: LlmConfig,
-    private val client: HttpClient = HttpClient.newBuilder().connectTimeout(config.timeout).build(),
+    client: HttpClient? = null,
 ) : RecommendationProvider {
+    private val httpClient by lazy {
+        client ?: HttpClient.newBuilder().connectTimeout(config.timeout).build()
+    }
+
     override suspend fun recommend(input: RecommendationInput): RecommendationResponse {
         check(config.enabled) { "LLM provider is disabled" }
         val endpoint = requireNotNull(config.endpoint) { "LLM_ENDPOINT is required when LLM is enabled" }
@@ -31,7 +40,10 @@ class LlmProvider(
             .apply { config.apiKey?.let { header("Authorization", "Bearer $it") } }
             .POST(HttpRequest.BodyPublishers.ofString(safePayload(input).toString()))
             .build()
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        // The request deadline must also cover the body after the headers arrive.
+        val response = withTimeoutOrNull(config.timeout.toKotlinDuration()) {
+            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()).await()
+        } ?: throw HttpTimeoutException("LLM response deadline exceeded")
         require(response.statusCode() in 200..299) { "LLM returned HTTP ${response.statusCode()}" }
         return parseResponse(response.body())
     }
@@ -46,14 +58,16 @@ class LlmProvider(
 
     /** Reject unknown/missing fields rather than accepting an arbitrary LLM response. */
     internal fun parseResponse(body: String): RecommendationResponse {
-        val objectValue = Json { ignoreUnknownKeys = false }.parseToJsonElement(body) as? JsonObject
+        val objectValue = Json.parseToJsonElement(body) as? JsonObject
             ?: throw IllegalArgumentException("LLM response must be a JSON object")
         val allowed = setOf("title", "message", "category", "actionType", "actionLabel")
         require(objectValue.keys == allowed) { "LLM response has an unexpected schema" }
         val title = objectValue.requiredString("title", 80)
         val message = objectValue.requiredString("message", 400)
         val category = objectValue.nullableString("category", 32)?.also {
-            require(it in Categories.CODES) { "LLM category is invalid" }
+            val name = requireNotNull(Categories.russianNames[it]) { "LLM category is invalid" }
+            val localizedName = Regex("""(?<!\p{L})${Regex.escape(name)}(?!\p{L})""", RegexOption.IGNORE_CASE)
+            require(localizedName.containsMatchIn(message)) { "LLM message must use the Russian category name" }
         }
         val actionType = objectValue.requiredString("actionType", 40)
         require(actionType in ACTION_TYPES) { "LLM actionType is invalid" }
@@ -88,6 +102,8 @@ class FallbackRecommendationProvider(
     override suspend fun recommend(input: RecommendationInput): RecommendationResponse =
         try {
             primary.recommend(input)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             fallback.recommend(input)
         }

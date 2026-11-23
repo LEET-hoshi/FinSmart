@@ -1,5 +1,7 @@
 package ru.finsmart.server
 
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
@@ -25,13 +27,20 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import ru.finsmart.server.common.AppConfig
+import ru.finsmart.server.common.LlmConfig
 import ru.finsmart.server.goals.BUSINESS_ZONE
 import java.io.File
+import java.net.InetSocketAddress
+import java.time.Duration
 import java.time.LocalDate
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class BackendAcceptanceIntegrationTest {
@@ -40,8 +49,11 @@ class BackendAcceptanceIntegrationTest {
 
     private class User(val token: String)
 
-    private fun apiTest(block: suspend ApplicationTestBuilder.() -> Unit) = testApplication {
-        application { module(config, dataSource) }
+    private fun apiTest(
+        appConfig: AppConfig = config,
+        block: suspend ApplicationTestBuilder.() -> Unit,
+    ) = testApplication {
+        application { module(appConfig, dataSource) }
         block()
     }
 
@@ -263,13 +275,11 @@ class BackendAcceptanceIntegrationTest {
     @Test
     fun recommendation_route_returns_offers_action_for_the_fastest_growing_category() = apiTest {
         val user = client.register()
-        client.importCsv(user, "valid.csv")
+        assertEquals(6, client.importCsv(user, "recommendation-demo.csv").int("imported"))
 
-        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
-
-        assertEquals("open_offers", recommendation.str("actionType"))
-        assertTrue(recommendation.str("category") in setOf("groceries", "cafes", "transport", "health", "home", "entertainment", "other"))
-        assertEquals("rules", recommendation.str("source"))
+        val summary = client.authJson(user, "/analytics/summary?month=2026-10")
+        assertEquals("groceries", summary.str("topCategory"))
+        assertRulesRecommendation(client.authJson(user, "/ai/recommendation?month=2026-10"))
     }
 
     @Test
@@ -296,6 +306,188 @@ class BackendAcceptanceIntegrationTest {
         val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
 
         assertTrue(recommendation.str("message").contains("50.0%"))
+    }
+
+    @Test
+    fun recommendation_uses_rules_when_llm_is_not_configured() = apiTest {
+        val user = client.register()
+        client.importCsv(user, "valid.csv")
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+        assertEquals("rules", recommendation.str("source"))
+        assertEquals("open_offers", recommendation.str("actionType"))
+    }
+
+    @Test
+    fun recommendation_falls_back_to_rules_when_llm_endpoint_fails() = apiTest(
+        config.copy(
+            llm = LlmConfig(
+                enabled = true,
+                endpoint = "http://127.0.0.1:1/recommendation",
+                timeout = Duration.ofMillis(100),
+            ),
+        ),
+    ) {
+        val user = client.register()
+        client.importCsv(user, "valid.csv")
+
+        val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+        assertEquals("rules", recommendation.str("source"))
+        assertEquals("open_offers", recommendation.str("actionType"))
+    }
+
+    @Test
+    fun recommendation_falls_back_to_rules_when_llm_times_out() {
+        val llmServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/recommendation") { exchange ->
+                Thread.sleep(500)
+                exchange.sendResponseHeaders(HttpStatusCode.OK.value, 0)
+                exchange.responseBody.close()
+            }
+            start()
+        }
+        val appConfig = config.copy(
+            llm = LlmConfig(
+                enabled = true,
+                endpoint = "http://127.0.0.1:${llmServer.address.port}/recommendation",
+                timeout = Duration.ofMillis(100),
+            ),
+        )
+
+        try {
+            apiTest(appConfig) {
+                val user = client.register()
+                client.importCsv(user, "valid.csv")
+
+                val recommendation = client.authJson(user, "/ai/recommendation?month=2026-10")
+
+                assertEquals("rules", recommendation.str("source"))
+                assertEquals("open_offers", recommendation.str("actionType"))
+            }
+        } finally {
+            llmServer.stop(0)
+        }
+    }
+
+    @Test
+    fun recommendation_returns_llm_result_and_sends_only_allowed_aggregates() {
+        val payload = AtomicReference<String>()
+        val authorization = AtomicReference<String>()
+        withLlmServer(handle = { exchange ->
+            payload.set(exchange.requestBody.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            authorization.set(exchange.requestHeaders.getFirst("Authorization"))
+            exchange.respondWithLlm(HttpStatusCode.OK, demoLlmResponse)
+        }) {
+            val user = client.register()
+            assertEquals(6, client.importCsv(user, "recommendation-demo.csv").int("imported"))
+            val goal = client.post("/goals") {
+                header(HttpHeaders.Authorization, "Bearer ${user.token}")
+                contentType(ContentType.Application.Json)
+                setBody("""{"title":"DEMO_GOAL_TITLE","targetAmount":"1000","currentAmount":"500"}""")
+            }
+            assertEquals(HttpStatusCode.Created, goal.status, goal.bodyAsText())
+
+            val result = client.authJson(user, "/ai/recommendation?month=2026-10")
+            val expected = Json.parseToJsonElement(demoLlmResponse).jsonObject
+            assertEquals(expected, JsonObject(result - "source"))
+            assertEquals("llm", result.str("source"))
+            assertEquals(null, authorization.get())
+            val expectedPayload = Json.parseToJsonElement(
+                """{"totalExpense":"1700.00","previousTotalExpense":"1150.00","changePercent":47.8,"goalProgressPercent":50.0,"categories":"groceries,home,cafes"}""",
+            )
+            assertEquals(expectedPayload, Json.parseToJsonElement(assertNotNull(payload.get())))
+        }
+    }
+
+    @Test
+    fun recommendation_falls_back_to_rules_on_llm_http_error() =
+        withLlmServer(handle = { it.respondWithLlm(HttpStatusCode.ServiceUnavailable, demoLlmResponse) }) {
+            val user = client.register()
+            client.importCsv(user, "recommendation-demo.csv")
+            assertRulesRecommendation(client.authJson(user, "/ai/recommendation?month=2026-10"))
+        }
+
+    @Test
+    fun recommendation_falls_back_to_rules_on_invalid_llm_response() =
+        withLlmServer(handle = { it.respondWithLlm(HttpStatusCode.OK, """{"title":""") }) {
+            val user = client.register()
+            client.importCsv(user, "recommendation-demo.csv")
+            assertRulesRecommendation(client.authJson(user, "/ai/recommendation?month=2026-10"))
+        }
+
+    @Test
+    fun recommendation_falls_back_to_rules_when_llm_delays_the_body() {
+        val bodyStarted = CountDownLatch(1)
+        val finishBody = CountDownLatch(1)
+        withLlmServer(timeout = Duration.ofSeconds(1), handle = { exchange ->
+            val body = demoLlmResponse.toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(HttpStatusCode.OK.value, body.size.toLong())
+            exchange.responseBody.use { stream ->
+                stream.write(body, 0, 1)
+                stream.flush()
+                bodyStarted.countDown()
+                if (finishBody.await(5, TimeUnit.SECONDS)) return@use
+                stream.write(body, 1, body.size - 1)
+            }
+        }) {
+            val user = client.register()
+            client.importCsv(user, "recommendation-demo.csv")
+            try {
+                assertRulesRecommendation(client.authJson(user, "/ai/recommendation?month=2026-10"))
+                assertEquals(0L, bodyStarted.count)
+            } finally {
+                finishBody.countDown()
+            }
+        }
+    }
+
+    private fun assertRulesRecommendation(result: JsonObject) {
+        assertEquals("rules", result.str("source"))
+        assertEquals("Расходы выросли", result.str("title"))
+        assertEquals("home", result.str("category"))
+        assertEquals("open_offers", result.str("actionType"))
+        assertEquals("Посмотреть скидки", result.str("actionLabel"))
+        assertEquals(
+            "Расходы в категории «Дом» выросли сильнее всего. Посмотрите скидки в этой категории.",
+            result.str("message"),
+        )
+    }
+
+    private val demoLlmResponse =
+        """{"title":"Проверьте скидки","message":"Сравните предложения для категории «Дом» перед следующей покупкой.","category":"home","actionType":"open_offers","actionLabel":"Посмотреть скидки"}"""
+
+    private fun HttpExchange.respondWithLlm(status: HttpStatusCode, response: String) {
+        val body = response.toByteArray(Charsets.UTF_8)
+        sendResponseHeaders(status.value, body.size.toLong())
+        responseBody.use { it.write(body) }
+    }
+
+    private fun withLlmServer(
+        timeout: Duration = Duration.ofSeconds(5),
+        handle: (HttpExchange) -> Unit,
+        block: suspend ApplicationTestBuilder.() -> Unit,
+    ) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/recommendation") { exchange ->
+            try {
+                handle(exchange)
+            } finally {
+                exchange.close()
+            }
+        }
+        server.start()
+        try {
+            val llm = LlmConfig(
+                enabled = true,
+                endpoint = "http://127.0.0.1:${server.address.port}/recommendation",
+                timeout = timeout,
+            )
+            apiTest(config.copy(llm = llm), block)
+        } finally {
+            server.stop(0)
+        }
     }
 
     @Test
