@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.slf4j.LoggerFactory
+import ru.finsmart.server.goals.BUSINESS_ZONE
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,9 +44,38 @@ private fun JsonObject.price(key: String): BigDecimal? = str(key)?.let(::BigDeci
     require(it.signum() >= 0) { "$key < 0" }
 }
 
+/**
+ * Demo-каталог хранится в Git, поэтому его даты не должны становиться причиной
+ * пустого экрана скидок через несколько дней после подготовки демо. Для test-
+ * записей, чья акция уже закончилась, сохраняем исходную длительность, но
+ * начинаем её от текущей даты. Реальные предложения (`isTest = false`) никогда
+ * не меняются: их сроки задаёт источник.
+ */
+internal fun floatingDemoDates(
+    validFrom: LocalDate?,
+    validTo: LocalDate?,
+    isTest: Boolean,
+    today: LocalDate,
+): Pair<LocalDate?, LocalDate?> {
+    if (!isTest || validTo == null || !validTo.isBefore(today)) return validFrom to validTo
+
+    val durationDays = validFrom
+        ?.takeIf { !it.isAfter(validTo) }
+        ?.let { java.time.temporal.ChronoUnit.DAYS.between(it, validTo) }
+        ?: 7L
+    return today to today.plusDays(durationDays)
+}
+
 private fun parseRecord(o: JsonObject, categories: Set<String>): OfferRecord {
     val category = requireNotNull(o.str("category")) { "category" }
     require(category in categories) { "unknown category $category" }
+    val isTest = o.str("isTest")?.toBooleanStrictOrNull() ?: false
+    val (validFrom, validTo) = floatingDemoDates(
+        validFrom = o.str("validFrom")?.let(LocalDate::parse),
+        validTo = o.str("validTo")?.let(LocalDate::parse),
+        isTest = isTest,
+        today = LocalDate.now(BUSINESS_ZONE),
+    )
     return OfferRecord(
         sourceId = requireNotNull(o.str("sourceId")) { "sourceId" },
         title = requireNotNull(o.str("title")) { "title" },
@@ -54,13 +84,13 @@ private fun parseRecord(o: JsonObject, categories: Set<String>): OfferRecord {
         regularPrice = o.price("regularPrice"),
         salePrice = o.price("salePrice"),
         currency = o.str("currency") ?: "RUB",
-        validFrom = o.str("validFrom")?.let(LocalDate::parse),
-        validTo = o.str("validTo")?.let(LocalDate::parse),
+        validFrom = validFrom,
+        validTo = validTo,
         conditions = o.str("conditions"),
         url = requireNotNull(o.str("url")) { "url" },
         region = o.str("region"),
         checkedAt = Instant.parse(requireNotNull(o.str("checkedAt")) { "checkedAt" }),
-        isTest = o.str("isTest")?.toBooleanStrictOrNull() ?: false,
+        isTest = isTest,
     )
 }
 
