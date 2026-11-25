@@ -1,4 +1,13 @@
 services:
+  offers-updater:
+    build:
+      context: .
+      dockerfile: tools/offers-updater/Dockerfile
+    environment:
+      OFFERS_MODE: ${OFFERS_MODE:-live}
+    volumes:
+      - offers_catalog:/workspace/build/generated/fixtures
+
   db:
     image: postgres:16-alpine
     environment:
@@ -35,10 +44,13 @@ services:
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
-      - ${FIXTURES_DIR:-./fixtures}:/app/fixtures:ro
+      - offers_catalog:/app/fixtures:ro
     depends_on:
+      offers-updater:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  offers_catalog:

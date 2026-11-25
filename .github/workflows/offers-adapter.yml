@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "scripts/update-magnit-offers*"
+      - "scripts/start-with-magnit*"
+      - "scripts/prepare-offers*"
+      - "tools/offers-updater/**"
+      - "docker-compose.yml"
       - "tools/api-anything/**"
       - "fixtures/offers/magnit-source-sample.json"
       - "package.json"
@@ -13,6 +17,10 @@ on:
     branches: [main]
     paths:
       - "scripts/update-magnit-offers*"
+      - "scripts/start-with-magnit*"
+      - "scripts/prepare-offers*"
+      - "tools/offers-updater/**"
+      - "docker-compose.yml"
       - "tools/api-anything/**"
       - "fixtures/offers/magnit-source-sample.json"
       - "package.json"

@@ -19,7 +19,12 @@ import javax.sql.DataSource
 
 private val log = LoggerFactory.getLogger("OfferCatalogLoader")
 
-data class LoadReport(val loaded: Int, val skipped: Int)
+data class LoadReport(
+    val loaded: Int,
+    val skipped: Int,
+    val removedTest: Int = 0,
+    val removedLive: Int = 0,
+)
 
 private class OfferRecord(
     val sourceId: String,
@@ -116,7 +121,13 @@ object OfferCatalogLoader {
             try {
                 val report = upsertAll(c, array)
                 c.commit()
-                log.info("Каталог скидок: загружено {}, пропущено {}", report.loaded, report.skipped)
+                log.info(
+                    "Каталог скидок: загружено {}, пропущено {}, удалено демо {}, удалено рабочих {}",
+                    report.loaded,
+                    report.skipped,
+                    report.removedTest,
+                    report.removedLive,
+                )
                 report
             } catch (e: Exception) {
                 c.rollback()
@@ -134,6 +145,8 @@ object OfferCatalogLoader {
         }
         var loaded = 0
         var skipped = 0
+        var loadedLive = 0
+        var loadedTest = 0
         for (element in array) {
             val record = try {
                 parseRecord(element as JsonObject, categories)
@@ -175,7 +188,21 @@ object OfferCatalogLoader {
                 it.executeUpdate()
             }
             loaded++
+            if (record.isTest) loadedTest++ else loadedLive++
         }
-        return LoadReport(loaded, skipped)
+        require(loadedLive == 0 || loadedTest == 0) { "каталог смешивает рабочие и демонстрационные записи" }
+        // Режим каталога переключается только после успешной загрузки хотя бы одной
+        // записи. Пустой, повреждённый или полностью отклонённый импорт ничего не удаляет.
+        val removedTest = if (loadedLive > 0) {
+            c.createStatement().use { it.executeUpdate("DELETE FROM offers WHERE is_test = TRUE") }
+        } else {
+            0
+        }
+        val removedLive = if (loadedTest > 0) {
+            c.createStatement().use { it.executeUpdate("DELETE FROM offers WHERE is_test = FALSE") }
+        } else {
+            0
+        }
+        return LoadReport(loaded, skipped, removedTest, removedLive)
     }
 }
