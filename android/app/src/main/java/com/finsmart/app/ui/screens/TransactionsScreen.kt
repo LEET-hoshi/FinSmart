@@ -36,7 +36,7 @@ fun TransactionsScreen(viewModel: TransactionsViewModel = viewModel()) {
         uri?.let {
             // Копируем выбранный файл во временную папку
             val inputStream = context.contentResolver.openInputStream(uri)
-            val tempFile = File(context.cacheDir, "import.csv")
+            val tempFile = File(context.cacheDir, "import.xlsx")
             val outputStream = FileOutputStream(tempFile)
             inputStream?.copyTo(outputStream)
             inputStream?.close()
@@ -51,7 +51,7 @@ fun TransactionsScreen(viewModel: TransactionsViewModel = viewModel()) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = { filePickerLauncher.launch("text/*") },
+            onClick = { filePickerLauncher.launch("*/*") },
             modifier = Modifier.fillMaxWidth(),
             enabled = !isLoading
         ) {

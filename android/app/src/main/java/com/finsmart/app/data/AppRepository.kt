@@ -89,7 +89,12 @@ class AppRepository(
 
     suspend fun importCsv(file: File): ImportResult? {
         return try {
-            val requestFile = file.asRequestBody("text/csv".toMediaTypeOrNull())
+            val mediaType = if (file.extension.equals("xlsx", ignoreCase = true)) {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            } else {
+                "text/csv"
+            }
+            val requestFile = file.asRequestBody(mediaType.toMediaTypeOrNull())
             val body = MultipartBody.Part.createFormData("file", file.name, requestFile)
             val res = api.importCsv(body)
             if (res.isSuccessful) res.body() else null

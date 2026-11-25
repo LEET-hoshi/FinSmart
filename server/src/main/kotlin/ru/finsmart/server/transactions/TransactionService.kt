@@ -12,7 +12,13 @@ class TransactionService(private val repository: TransactionRepository) {
     suspend fun import(userId: UUID, bytes: ByteArray): ImportResultResponse {
         val parsed = try {
             val mccCategories = repository.mccCategories()
-            withContext(Dispatchers.Default) { CsvImportParser.parse(bytes, mccCategories) }
+            withContext(Dispatchers.Default) {
+                if (BankStatementXlsxParser.isXlsx(bytes)) {
+                    BankStatementXlsxParser.parse(bytes)
+                } else {
+                    CsvImportParser.parse(bytes, mccCategories)
+                }
+            }
         } catch (e: InvalidCsvException) {
             throw ApiException(HttpStatusCode.BadRequest, "invalid_csv", e.message ?: "Неверный CSV", e.details)
         } catch (e: CsvTooLargeException) {
