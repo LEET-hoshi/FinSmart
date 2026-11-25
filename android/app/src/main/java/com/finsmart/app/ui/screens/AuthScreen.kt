@@ -18,8 +18,10 @@ fun AuthScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
 
-    var email by remember { mutableStateOf("demo@finsmart.local") }
-    var password by remember { mutableStateOf("demo12345") }
+    // A new installation has no pre-created account.  Keep both fields empty so
+    // the first action is an explicit registration instead of a failed demo login.
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
     // Если пользователь вошел - переключаем экран
     LaunchedEffect(Unit) {
@@ -74,6 +76,12 @@ fun AuthScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Зарегистрироваться")
+            }
+            TextButton(
+                onClick = { viewModel.login("demo@finsmart.local", "demo12345") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Войти в демо-режиме")
             }
         }
     }

@@ -22,6 +22,7 @@ import ru.finsmart.server.analytics.AnalyticsService
 import ru.finsmart.server.analytics.analyticsRoutes
 import ru.finsmart.server.auth.AuthRepository
 import ru.finsmart.server.auth.AuthService
+import ru.finsmart.server.auth.DemoAccountSeeder
 import ru.finsmart.server.auth.JWT_AUTH
 import ru.finsmart.server.auth.TokenService
 import ru.finsmart.server.auth.authRoutes
@@ -56,6 +57,7 @@ fun main() {
     val config = AppConfig.fromEnv()
     val dataSource = Database.createDataSource(config.db)
     Database.migrate(dataSource)
+    DemoAccountSeeder.seed(dataSource, config.demoAccount)
     config.offersFile?.let { OfferCatalogLoader.load(dataSource, Path.of(it)) }
 
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {

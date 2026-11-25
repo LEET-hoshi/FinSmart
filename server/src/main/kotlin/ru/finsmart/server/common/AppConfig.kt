@@ -9,6 +9,7 @@ data class AppConfig(
     val offersFile: String? = null,
     val rateLimit: RateLimitConfig = RateLimitConfig(),
     val llm: LlmConfig = LlmConfig(),
+    val demoAccount: DemoAccountConfig = DemoAccountConfig(),
 ) {
     companion object {
         private const val MIN_SECRET_LENGTH = 32
@@ -39,6 +40,11 @@ data class AppConfig(
                 apiKey = env["LLM_API_KEY"]?.takeIf { it.isNotBlank() },
                 timeout = Duration.ofSeconds(env["LLM_TIMEOUT_SECONDS"]?.toLongOrNull()?.coerceIn(1, 30) ?: 5),
             ),
+            demoAccount = DemoAccountConfig(
+                enabled = env["DEMO_ACCOUNT_ENABLED"].equals("true", ignoreCase = true),
+                email = env["DEMO_ACCOUNT_EMAIL"]?.takeIf { it.isNotBlank() } ?: "demo@finsmart.local",
+                password = env["DEMO_ACCOUNT_PASSWORD"]?.takeIf { it.isNotBlank() } ?: "demo12345",
+            ),
         )
 
         private fun Map<String, String>.positiveInt(key: String): Int? = this[key]?.toIntOrNull()?.takeIf { it > 0 }
@@ -53,6 +59,12 @@ data class LlmConfig(
 ) {
     val mode: String get() = if (enabled && endpoint != null) "llm" else "rules"
 }
+
+data class DemoAccountConfig(
+    val enabled: Boolean = false,
+    val email: String = "demo@finsmart.local",
+    val password: String = "demo12345",
+)
 
 data class RateLimitConfig(
     val authPerMinute: Int = DEFAULT_AUTH_PER_MINUTE,
