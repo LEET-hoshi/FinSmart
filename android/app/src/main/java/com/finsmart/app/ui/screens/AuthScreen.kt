@@ -77,6 +77,12 @@ fun AuthScreen(
             ) {
                 Text("Зарегистрироваться")
             }
+            TextButton(
+                onClick = { viewModel.login("demo@finsmart.local", "demo12345") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Войти в демо-режиме")
+            }
         }
     }
 }
