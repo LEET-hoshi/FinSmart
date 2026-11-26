@@ -15,7 +15,7 @@ object BankStatementXlsxParser {
     fun isXlsx(bytes: ByteArray): Boolean =
         bytes.size >= xlsxMagic.size && xlsxMagic.indices.all { bytes[it] == xlsxMagic[it] }
 
-    fun parse(bytes: ByteArray): CsvParseResult {
+    fun parse(bytes: ByteArray, mccToCategory: Map<String, String> = emptyMap()): CsvParseResult {
         val rows = mutableListOf<ParsedTransaction>()
         val errors = mutableListOf<ImportRowError>()
         val seen = mutableSetOf<String>()
@@ -39,7 +39,17 @@ object BankStatementXlsxParser {
                         require(operationId.isNotEmpty() && operationId.length <= 64)
                         val amount = BigDecimal(amountText.replace("\u00A0", "").replace(" ", "").replace(',', '.'))
                         require(amount.signum() != 0)
-                        ParsedTransaction(operationId, LocalDate.parse(dateText, dateFormat), amount.setScale(2), "RUB", description.ifEmpty { null }, null, CATEGORY_OTHER)
+                        val mcc = extractMcc(description)
+                        ParsedTransaction(
+                            operationId = operationId,
+                            date = LocalDate.parse(dateText, dateFormat),
+                            amount = amount.setScale(2),
+                            currency = "RUB",
+                            description = description.ifEmpty { null },
+                            mcc = mcc,
+                            categoryCode = mcc?.let(mccToCategory::get) ?: CATEGORY_OTHER,
+                            isInternalTransfer = isInternalTransfer(description),
+                        )
                     } catch (_: Exception) {
                         errors += ImportRowError(line, null, "Не удалось прочитать операцию из Excel-выписки")
                         null
@@ -55,4 +65,7 @@ object BankStatementXlsxParser {
         }
         return CsvParseResult(rows, duplicates, errors)
     }
+
+    private fun extractMcc(description: String): String? =
+        Regex("(?i)MCC:\\s*(\\d{4})").find(description)?.groupValues?.get(1)
 }

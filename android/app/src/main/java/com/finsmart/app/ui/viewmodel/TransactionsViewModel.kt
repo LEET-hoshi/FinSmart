@@ -10,7 +10,9 @@ import com.finsmart.app.data.local.TransactionEntity
 import com.finsmart.app.data.model.ImportResult
 import com.finsmart.app.utils.TokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import com.finsmart.app.utils.DateUtils
@@ -30,6 +32,9 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
 
     private val _importResult = MutableStateFlow<ImportResult?>(null)
     val importResult: StateFlow<ImportResult?> = _importResult
+
+    private val _importCompleted = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val importCompleted = _importCompleted.asSharedFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
@@ -61,6 +66,7 @@ class TransactionsViewModel(application: Application) : AndroidViewModel(applica
             if (result != null) {
                 _importResult.value = result
                 repository.syncTransactions(DateUtils.getCurrentMonth())
+                _importCompleted.emit(Unit)
             } else {
                 _error.value = "Ошибка импорта. Проверьте соединение."
             }

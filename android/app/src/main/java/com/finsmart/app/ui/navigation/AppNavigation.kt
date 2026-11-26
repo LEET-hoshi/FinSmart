@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.finsmart.app.ui.screens.*
 import com.finsmart.app.ui.viewmodel.AuthViewModel
+import com.finsmart.app.ui.viewmodel.DashboardViewModel
 
 sealed class Screen(val route: String, val label: String) {
     object Dashboard : Screen("dashboard", "Главная")
@@ -56,11 +57,13 @@ fun FinSmartApp() {
 @Composable
 fun AppMainScreen() {
     val navController = rememberNavController()
+    val dashboardViewModel: DashboardViewModel = viewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     // Состояние для фильтрации скидок
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var selectedTransactionFilter by remember { mutableStateOf(TransactionFilter.All) }
 
     Scaffold(
         bottomBar = {
@@ -81,6 +84,9 @@ fun AppMainScreen() {
                             // СБРОС ФИЛЬТРА: если нажали на вкладку Скидки вручную, показываем все
                             if (screen == Screen.Offers) {
                                 selectedCategory = null
+                            }
+                            if (screen == Screen.Transactions) {
+                                selectedTransactionFilter = TransactionFilter.All
                             }
                             navController.navigate(screen.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -110,7 +116,8 @@ fun AppMainScreen() {
                             restoreState = true
                         }
                     },
-                    onNavigateToTransactions = {
+                    onNavigateToTransactions = { filter ->
+                        selectedTransactionFilter = filter
                         navController.navigate(Screen.Transactions.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -123,10 +130,16 @@ fun AppMainScreen() {
                             launchSingleTop = true
                             restoreState = true
                         }
-                    }
+                    },
+                    viewModel = dashboardViewModel
                 )
             }
-            composable(Screen.Transactions.route) { TransactionsScreen() }
+            composable(Screen.Transactions.route) {
+                TransactionsScreen(
+                    onImportCompleted = dashboardViewModel::refresh,
+                    initialFilter = selectedTransactionFilter
+                )
+            }
 
             composable(Screen.Offers.route) {
                 OffersScreen(category = selectedCategory)

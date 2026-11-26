@@ -14,7 +14,7 @@ class TransactionService(private val repository: TransactionRepository) {
             val mccCategories = repository.mccCategories()
             withContext(Dispatchers.Default) {
                 if (BankStatementXlsxParser.isXlsx(bytes)) {
-                    BankStatementXlsxParser.parse(bytes)
+                    BankStatementXlsxParser.parse(bytes, mccCategories)
                 } else {
                     CsvImportParser.parse(bytes, mccCategories)
                 }
