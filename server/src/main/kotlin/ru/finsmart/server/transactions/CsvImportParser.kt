@@ -22,7 +22,13 @@ data class ParsedTransaction(
     val description: String?,
     val mcc: String?,
     val categoryCode: String,
+    val isInternalTransfer: Boolean,
 )
+
+fun isInternalTransfer(description: String?): Boolean {
+    val normalized = description?.lowercase().orEmpty()
+    return normalized.contains("внутрибанковский перевод") || normalized.contains("перевод между счетами")
+}
 
 @Serializable
 data class ImportRowError(val line: Int, val field: String?, val reason: String)
@@ -90,6 +96,7 @@ object CsvImportParser {
                 description = description.trim().ifEmpty { null },
                 mcc = mccValue,
                 categoryCode = mccValue?.let(mccToCategory::get) ?: CATEGORY_OTHER,
+                isInternalTransfer = isInternalTransfer(description),
             )
         }
         return CsvParseResult(rows, duplicates, errors)

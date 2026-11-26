@@ -32,16 +32,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
+    private var selectedMonth = DateUtils.getCurrentMonth()
 
     init {
         loadData()
     }
 
-    private fun loadData() {
+    fun refresh() {
+        loadData(selectedMonth)
+    }
+
+    fun loadMonth(month: String) {
+        selectedMonth = month
+        loadData(month)
+    }
+
+    private fun loadData(month: String = selectedMonth) {
         viewModelScope.launch {
             _isLoading.value = true
-
-            val month = DateUtils.getCurrentMonth()
 
             val summaryResult = repository.getAnalytics(month)
             val recommendationResult = repository.getRecommendation(month)

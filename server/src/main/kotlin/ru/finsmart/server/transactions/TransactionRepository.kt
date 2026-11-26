@@ -24,8 +24,8 @@ class TransactionRepository(private val dataSource: DataSource) {
         if (rows.isEmpty()) return@transaction 0
         conn.prepareStatement(
             """
-            INSERT INTO transactions (user_id, external_id, operation_date, amount, currency, description, mcc, category_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO transactions (user_id, external_id, operation_date, amount, currency, description, mcc, category_code, is_internal_transfer)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (user_id, external_id) DO NOTHING
             """.trimIndent(),
         ).use { ps ->
@@ -38,6 +38,7 @@ class TransactionRepository(private val dataSource: DataSource) {
                 ps.setString(6, row.description)
                 ps.setString(7, row.mcc)
                 ps.setString(8, row.categoryCode)
+                ps.setBoolean(9, row.isInternalTransfer)
                 ps.addBatch()
             }
             ps.executeBatch().count { it > 0 }
